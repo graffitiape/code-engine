@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, onMount, onCleanup, Show } from "solid-js";
+import { Component, For, createSignal, createEffect, onMount, onCleanup, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import {
   TitleBar,
@@ -18,6 +18,7 @@ import { readDir, type FsNode } from "../bridge/tauri";
 import {
   pickFolder,
   restoreActiveRoot,
+  setActiveRoot,
   useWorkspace,
 } from "../stores/workspace";
 import {
@@ -31,7 +32,7 @@ import {
   setActivePath,
   useBuffersVersion,
 } from "../stores/buffers";
-import { basename, iconForName } from "../lib/fileIcon";
+import { basename, dirname, iconForName } from "../lib/fileIcon";
 
 const isTauri = (): boolean =>
   typeof window !== "undefined" &&
@@ -140,6 +141,20 @@ const EditorPage: Component<EditorPageProps> = (props) => {
       await loadRootTree(picked);
     } catch (e) {
       console.error("[CE] chooseFolder failed:", e);
+      setError(String(e));
+    }
+  }
+
+  async function openRecent(path: string) {
+    setError(null);
+    try {
+      clearBuffers();
+      setTabs([]);
+      setActiveTabId("");
+      await setActiveRoot(path);
+      await loadRootTree(path);
+    } catch (e) {
+      console.error("[CE] openRecent failed:", e);
       setError(String(e));
     }
   }
@@ -337,56 +352,69 @@ const EditorPage: Component<EditorPageProps> = (props) => {
   const toggleOverlay = (name: Exclude<OverlayName, null>) =>
     setActiveOverlay((o) => (o === name ? null : name));
 
+  const hasWorkspace = () => Boolean(workspace.activeRoot());
+
   return (
     <div class="desktop">
       <div class="window">
-        <TitleBar
-          tabs={tabs()}
-          activeTabId={activeTabId()}
-          onTabClick={(id) => {
-            setActiveTabId(id);
-            setActivePath(id);
-          }}
-          onTabClose={closeTab}
-          onNewTab={newTab}
-          onCommandPalette={() => setActiveOverlay("palette")}
-          toggleSidebar={() => setSidebarOpen((o) => !o)}
-          toggleGit={() => toggleOverlay("git")}
-          toggleMinimap={() => toggleOverlay("minimap")}
-          toggleSettings={() => toggleOverlay("settings")}
-          toggleSearch={() => toggleOverlay("search")}
-          sidebarOpen={sidebarOpen()}
-          activeOverlay={activeOverlay()}
-          activePage={props.activePage}
-          onNavigatePage={props.onNavigatePage}
-        />
-        <div class="body">
-          <Sidebar
-            tree={treeStore.nodes}
-            toggleNode={toggleNode}
-            openFile={openFile as any}
-            openFilePaths={openFilePaths()}
-            collapsed={!sidebarOpen()}
-          />
-          <div class="workspace">
-            <Show when={breadcrumbsFile()}>
-              <Breadcrumbs
-                file={breadcrumbsFile()}
-                diagCounts={diagCounts}
-                lspName="text"
+        <Show
+          when={hasWorkspace()}
+          fallback={
+            <>
+              <div class="titlebar titlebar-empty" aria-hidden="true">
+                <div class="traffic-lights">
+                  <span class="tl close" />
+                  <span class="tl min" />
+                  <span class="tl max" />
+                </div>
+              </div>
+              <EmptyWorkspace
+                onPick={chooseFolder}
+                onOpenRecent={openRecent}
+                recents={workspace.recents()}
+                busy={busy()}
+                error={error()}
               />
-            </Show>
-            <div class="panes">
-              <Show
-                when={tauriHost && workspace.activeRoot()}
-                fallback={
-                  <EmptyWorkspace
-                    onPick={chooseFolder}
-                    busy={busy()}
-                    error={error()}
-                  />
-                }
-              >
+            </>
+          }
+        >
+          <TitleBar
+            tabs={tabs()}
+            activeTabId={activeTabId()}
+            onTabClick={(id) => {
+              setActiveTabId(id);
+              setActivePath(id);
+            }}
+            onTabClose={closeTab}
+            onNewTab={newTab}
+            onCommandPalette={() => setActiveOverlay("palette")}
+            toggleSidebar={() => setSidebarOpen((o) => !o)}
+            toggleGit={() => toggleOverlay("git")}
+            toggleMinimap={() => toggleOverlay("minimap")}
+            toggleSettings={() => toggleOverlay("settings")}
+            toggleSearch={() => toggleOverlay("search")}
+            sidebarOpen={sidebarOpen()}
+            activeOverlay={activeOverlay()}
+            activePage={props.activePage}
+            onNavigatePage={props.onNavigatePage}
+          />
+          <div class="body">
+            <Sidebar
+              tree={treeStore.nodes}
+              toggleNode={toggleNode}
+              openFile={openFile as any}
+              openFilePaths={openFilePaths()}
+              collapsed={!sidebarOpen()}
+            />
+            <div class="workspace">
+              <Show when={breadcrumbsFile()}>
+                <Breadcrumbs
+                  file={breadcrumbsFile()}
+                  diagCounts={diagCounts}
+                  lspName="text"
+                />
+              </Show>
+              <div class="panes">
                 <Show
                   when={activeTabId()}
                   fallback={
@@ -399,20 +427,20 @@ const EditorPage: Component<EditorPageProps> = (props) => {
                     <CodeEditor path={activeTabId()} />
                   </div>
                 </Show>
-              </Show>
+              </div>
+              <StatusBar
+                mode={"EDIT"}
+                file={breadcrumbsFile()}
+                cursor={cursor()}
+                diagCounts={diagCounts}
+                task={busy() ?? null}
+                language={
+                  activeTabId() ? iconForName(activeTabId()) : null
+                }
+              />
             </div>
-            <StatusBar
-              mode={"EDIT"}
-              file={breadcrumbsFile()}
-              cursor={cursor()}
-              diagCounts={diagCounts}
-              task={busy() ?? null}
-              language={
-                activeTabId() ? iconForName(activeTabId()) : null
-              }
-            />
           </div>
-        </div>
+        </Show>
 
         <Show when={activeOverlay() === "palette"}>
           <CommandPalette
@@ -450,25 +478,88 @@ const EditorPage: Component<EditorPageProps> = (props) => {
   );
 };
 
+function tildify(path: string, recents: string[]): string {
+  // Infer ~ prefix from any path that looks like /Users/<name>/...
+  const probe = recents.find((p) => /^\/Users\/[^/]+\//.test(p)) ?? path;
+  const m = probe.match(/^(\/Users\/[^/]+)\//);
+  if (m && path.startsWith(m[1] + "/")) return "~" + path.slice(m[1].length);
+  return path;
+}
+
 const EmptyWorkspace: Component<{
   onPick: () => void;
+  onOpenRecent: (path: string) => void;
+  recents: string[];
   busy: string | null;
   error: string | null;
 }> = (props) => {
   return (
     <div class="empty-workspace">
-      <div class="empty-card">
-        <h2>Code Engine</h2>
-        <p>Open a project folder to start editing.</p>
-        <button type="button" class="primary-btn" onClick={props.onPick}>
-          Open Folder…
-          <span class="kbd">⌘O</span>
-        </button>
+      <div class="welcome">
+        <header class="welcome-hero">
+          <span class="welcome-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M5 7l3-2 7 4v6l-3 2-7-4V7z"
+                stroke="white"
+                stroke-width="1.4"
+                stroke-linejoin="round"
+              />
+              <circle cx="12" cy="11" r="2" fill="white" />
+            </svg>
+          </span>
+          <h1>Code Engine</h1>
+          <p class="welcome-tagline">
+            A fast, focused place to write code.
+          </p>
+        </header>
+
+        <section class="welcome-actions">
+          <button type="button" class="primary-btn" onClick={props.onPick}>
+            <span>Open Folder…</span>
+            <span class="kbd">⌘O</span>
+          </button>
+        </section>
+
+        <Show when={props.recents.length > 0}>
+          <section class="welcome-recents">
+            <h3 class="welcome-section-label">Recent</h3>
+            <ul>
+              <For each={props.recents.slice(0, 6)}>
+                {(p) => {
+                  const display = () => tildify(p, props.recents);
+                  const name = basename(p);
+                  const parent = tildify(dirname(p), props.recents);
+                  return (
+                    <li>
+                      <button
+                        type="button"
+                        class="welcome-recent"
+                        title={display()}
+                        onClick={() => props.onOpenRecent(p)}
+                      >
+                        <span class="welcome-recent-name">{name}</span>
+                        <span class="welcome-recent-parent">{parent}</span>
+                      </button>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </section>
+        </Show>
+
+        <footer class="welcome-hints">
+          <span><span class="kbd">⌘O</span> Open folder</span>
+          <span><span class="kbd">⌘P</span> Find file</span>
+          <span><span class="kbd">⌘,</span> Settings</span>
+        </footer>
+
         <Show when={props.error}>
-          <p class="error">Error: {props.error}</p>
+          <p class="welcome-error">Error: {props.error}</p>
         </Show>
         <Show when={props.busy}>
-          <p class="muted">{props.busy}</p>
+          <p class="welcome-muted">{props.busy}</p>
         </Show>
       </div>
     </div>
