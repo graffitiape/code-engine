@@ -1,0 +1,30 @@
+[package]
+name = "ce-tauri"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "ce_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "code-engine"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+ce-core = { path = "../ce-core" }
+ce-git = { path = "../ce-git" }
+ce-fs = { path = "../ce-fs" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+anyhow = { workspace = true }

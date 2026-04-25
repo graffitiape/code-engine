@@ -1,0 +1,9 @@
+{
+  "name": "code-engine",
+  "private": true,
+  "scripts": {
+    "dev": "cd packages/ui && pnpm dev",
+    "build": "cd packages/ui && pnpm build",
+    "tauri": "cd crates/ce-tauri && cargo tauri"
+  }
+}
