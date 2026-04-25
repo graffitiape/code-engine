@@ -48,7 +48,7 @@ export const Icons: Record<string, string> = {
 
 // ============ FILE TREE ============
 export const FileTree: FileNode[] = [
-  { type: 'dir', name: 'codeengine2', depth: 0, expanded: true, children: [
+  { type: 'dir', name: 'code-engine', depth: 0, expanded: true, children: [
     { type: 'dir', name: 'crates', depth: 1, expanded: true, children: [
       { type: 'dir', name: 'ce-core', depth: 2, expanded: true, children: [
         { type: 'dir', name: 'src', depth: 3, expanded: true, children: [
