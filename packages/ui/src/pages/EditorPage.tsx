@@ -33,6 +33,7 @@ import {
   useBuffersVersion,
 } from "../stores/buffers";
 import { basename, dirname, iconForName } from "../lib/fileIcon";
+import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
 
 const isTauri = (): boolean =>
   typeof window !== "undefined" &&
@@ -361,7 +362,12 @@ const EditorPage: Component<EditorPageProps> = (props) => {
           when={hasWorkspace()}
           fallback={
             <>
-              <div class="titlebar titlebar-empty" aria-hidden="true">
+              <div
+                class="titlebar titlebar-empty"
+                aria-hidden="true"
+                onMouseDown={handleTitlebarMouseDown}
+                onMouseUp={handleTitlebarMouseUp}
+              >
                 <div class="traffic-lights">
                   <span class="tl close" />
                   <span class="tl min" />

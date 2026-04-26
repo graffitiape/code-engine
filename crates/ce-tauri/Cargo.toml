@@ -28,3 +28,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 anyhow = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3.2", features = ["NSScreen", "NSWindow"] }
+objc2-foundation = { version = "0.3.2", features = ["objc2-core-foundation"] }

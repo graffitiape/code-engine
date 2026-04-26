@@ -8,18 +8,7 @@ import {
   Icon,
 } from "../design";
 import type { AgentKey, Ticket, PageKey } from "../design";
-import { titlebarDoubleClick } from "../bridge/tauri";
-
-function onTitleBarDblClick(e: MouseEvent) {
-  if (
-    e.target instanceof Element &&
-    e.target.closest(
-      "button, .icon-btn, .tab, .tab-new, .page-pill, .project-badge",
-    )
-  )
-    return;
-  titlebarDoubleClick().catch(() => {});
-}
+import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
 
 interface AgentsPageProps {
   activePage: PageKey;
@@ -54,7 +43,12 @@ const AgentsPage: Component<AgentsPageProps> = (props) => {
   return (
     <div class="desktop">
       <div class="window">
-        <div class="titlebar" data-screen-label="AgentsTitleBar" onDblClick={onTitleBarDblClick}>
+        <div
+          class="titlebar"
+          data-screen-label="AgentsTitleBar"
+          onMouseDown={handleTitlebarMouseDown}
+          onMouseUp={handleTitlebarMouseUp}
+        >
           <div class="traffic-lights">
             <span class="tl close" />
             <span class="tl min" />

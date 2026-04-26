@@ -4,23 +4,7 @@ import { For, Show } from 'solid-js';
 import type { Tab } from '../types';
 import { Icon, FileIcon } from '../Icon';
 import { PageSwitcher, type PageKey } from './PageSwitcher';
-import { titlebarDoubleClick } from '../../bridge/tauri';
-
-// Don't dispatch the maximize/minimize action when the user double-clicks
-// on an interactive child (a button, a tab, the project pill, etc.).
-function isInteractiveTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return !!target.closest(
-    'button, .icon-btn, .tab, .tab-new, .page-pill, .project-badge, input, textarea',
-  );
-}
-
-function onTitleBarDblClick(e: MouseEvent) {
-  if (isInteractiveTarget(e.target)) return;
-  titlebarDoubleClick().catch((err) =>
-    console.warn('[CE] titlebarDoubleClick failed:', err),
-  );
-}
+import { handleTitlebarMouseDown, handleTitlebarMouseUp } from '../../lib/titlebar';
 
 export interface TitleBarProps {
   tabs: Tab[];
@@ -42,7 +26,12 @@ export interface TitleBarProps {
 
 export function TitleBar(props: TitleBarProps) {
   return (
-    <div class="titlebar" data-screen-label="TitleBar" onDblClick={onTitleBarDblClick}>
+    <div
+      class="titlebar"
+      data-screen-label="TitleBar"
+      onMouseDown={handleTitlebarMouseDown}
+      onMouseUp={handleTitlebarMouseUp}
+    >
       <div class="traffic-lights">
         <span class="tl close" />
         <span class="tl min" />

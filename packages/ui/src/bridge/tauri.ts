@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppSettings } from "./types";
 
 /** One filesystem entry returned by `read_dir`. */
@@ -114,7 +115,12 @@ export async function listWorkspaceFiles(
 }
 
 /** Mirror the macOS "double-click a title bar to" behavior. Reads the user's
- *  system pref and either minimizes or zooms the window. No-op on linux. */
+ *  system pref and either minimizes or zooms the window. */
 export async function titlebarDoubleClick(): Promise<void> {
   return invoke("titlebar_double_click");
+}
+
+/** Begin an OS-level window drag from a custom titlebar surface. */
+export async function startWindowDrag(): Promise<void> {
+  return getCurrentWindow().startDragging();
 }

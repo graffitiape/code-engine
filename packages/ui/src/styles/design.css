@@ -139,7 +139,6 @@ button {
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
   user-select: none;
-  -webkit-app-region: drag;
   position: relative;
 }
 
@@ -169,7 +168,6 @@ button {
   display: flex; align-items: center; gap: 8px;
   padding: 0 14px 0 6px;
   border-right: 1px solid var(--border);
-  -webkit-app-region: no-drag;
   cursor: pointer;
 }
 .project-badge:hover { background: var(--bg-3); }
@@ -338,7 +336,6 @@ button {
   gap: 2px;
   padding: 0 10px;
   border-right: 1px solid var(--border);
-  -webkit-app-region: no-drag;
 }
 .page-pill {
   display: inline-flex; align-items: center;
@@ -367,7 +364,6 @@ button {
 .tabs {
   display: flex; align-items: stretch;
   flex: 1; overflow-x: auto; overflow-y: hidden;
-  -webkit-app-region: no-drag;
   scrollbar-width: none;
 }
 .tabs::-webkit-scrollbar { display: none; }
@@ -412,7 +408,7 @@ button {
 .tab-new {
   display: grid; place-items: center;
   width: 34px; color: var(--fg-2);
-  -webkit-app-region: no-drag; cursor: pointer;
+  cursor: pointer;
   border-right: 1px solid var(--border);
 }
 .tab-new:hover { background: var(--bg-3); color: var(--fg-0); }
@@ -421,7 +417,6 @@ button {
 .titlebar-right {
   display: flex; align-items: center; gap: 2px;
   padding: 0 10px;
-  -webkit-app-region: no-drag;
 }
 .icon-btn {
   width: 26px; height: 26px; border-radius: 5px;
