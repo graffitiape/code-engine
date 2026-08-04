@@ -1,7 +1,7 @@
 // Inline SVG icon components — read SVG strings from the Icons map.
 
 import type { JSX } from 'solid-js';
-import { Icons } from './data';
+import { Icons } from './icons';
 
 export function Icon(props: {
   name: string;

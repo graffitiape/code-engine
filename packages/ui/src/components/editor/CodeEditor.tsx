@@ -1,7 +1,7 @@
 // CodeMirror 6-based code editor. Hosts a single buffer at a time; switching
 // active path replaces the whole editor state.
 
-import { Component, createEffect, onCleanup, onMount } from "solid-js";
+import { Component, createEffect, onCleanup } from "solid-js";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, highlightSpecialChars } from "@codemirror/view";
 import {
@@ -33,14 +33,23 @@ import { python } from "@codemirror/lang-python";
 
 import {
   ensureBuffer,
+  getBuffer,
   saveBuffer,
   updateContent,
   updateCursor,
+  useBuffersVersion,
 } from "../../stores/buffers";
 
 interface CodeEditorProps {
   path: string | null;
   onCursor?: (line: number, col: number) => void;
+  onSave?: (path: string) => Promise<void> | void;
+  onError?: (message: string) => void;
+  fontFamily?: string;
+  fontSize?: number;
+  lineHeight?: number;
+  wordWrap?: boolean;
+  tabSize?: number;
 }
 
 function languageExtension(path: string) {
@@ -78,7 +87,43 @@ function languageExtension(path: string) {
 const CodeEditor: Component<CodeEditorProps> = (props) => {
   let hostRef: HTMLDivElement | undefined;
   let view: EditorView | undefined;
+  let renderedPath: string | null = null;
+  let loadGeneration = 0;
   const langCompartment = new Compartment();
+  const appearanceCompartment = new Compartment();
+  const wrappingCompartment = new Compartment();
+  const tabSizeCompartment = new Compartment();
+  const buffersVersion = useBuffersVersion();
+
+  const appearanceExtension = () =>
+    EditorView.theme(
+      {
+        "&": {
+          height: "100%",
+          fontSize: `${props.fontSize ?? 13}px`,
+          background: "var(--bg-1)",
+        },
+        ".cm-scroller": {
+          fontFamily: props.fontFamily
+            ? `"${props.fontFamily}", var(--font-mono), monospace`
+            : 'var(--font-mono), "JetBrains Mono", monospace',
+          lineHeight: String(props.lineHeight ?? 1.55),
+        },
+        ".cm-gutters": {
+          background: "var(--bg-1)",
+          border: "none",
+          color: "var(--fg-3)",
+        },
+        ".cm-activeLine": {
+          background: "color-mix(in oklab, var(--accent) 8%, transparent)",
+        },
+        ".cm-activeLineGutter": {
+          background: "color-mix(in oklab, var(--accent) 12%, transparent)",
+          color: "var(--fg-1)",
+        },
+      },
+      { dark: true },
+    );
 
   function buildExtensions(path: string) {
     return [
@@ -105,10 +150,14 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
         {
           key: "Mod-s",
           run: () => {
-            if (props.path) {
-              saveBuffer(props.path).catch((e) =>
-                console.error("[CE] save failed:", e),
-              );
+            if (renderedPath) {
+              const action = props.onSave
+                ? props.onSave(renderedPath)
+                : saveBuffer(renderedPath);
+              Promise.resolve(action).catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                props.onError?.(message);
+              });
             }
             return true;
           },
@@ -116,61 +165,55 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
       ]),
       langCompartment.of(languageExtension(path)),
       oneDark,
-      EditorView.theme(
-        {
-          "&": {
-            height: "100%",
-            fontSize: "13px",
-            background: "var(--bg-1)",
-          },
-          ".cm-scroller": {
-            fontFamily: 'var(--font-mono), "JetBrains Mono", monospace',
-            lineHeight: "1.55",
-          },
-          ".cm-gutters": {
-            background: "var(--bg-1)",
-            border: "none",
-            color: "var(--fg-3)",
-          },
-          ".cm-activeLine": {
-            background: "color-mix(in oklab, var(--accent) 8%, transparent)",
-          },
-          ".cm-activeLineGutter": {
-            background: "color-mix(in oklab, var(--accent) 12%, transparent)",
-            color: "var(--fg-1)",
-          },
-        },
-        { dark: true },
-      ),
+      appearanceCompartment.of(appearanceExtension()),
       EditorView.updateListener.of((update) => {
-        if (!props.path) return;
+        if (renderedPath !== path) return;
         if (update.docChanged) {
-          updateContent(props.path, update.state.doc.toString());
+          updateContent(path, update.state.doc.toString());
         }
         if (update.selectionSet || update.docChanged) {
           const head = update.state.selection.main.head;
           const line = update.state.doc.lineAt(head);
           const lineNumber = line.number;
           const col = head - line.from + 1;
-          updateCursor(props.path, lineNumber, col);
+          updateCursor(path, lineNumber, col);
           props.onCursor?.(lineNumber, col);
         }
       }),
+      wrappingCompartment.of(props.wordWrap ? EditorView.lineWrapping : []),
+      tabSizeCompartment.of(EditorState.tabSize.of(props.tabSize ?? 2)),
     ];
   }
 
   async function loadPath(path: string | null) {
+    const generation = ++loadGeneration;
     if (!hostRef) return;
     if (!path) {
       view?.destroy();
       view = undefined;
+      renderedPath = null;
       hostRef.innerHTML = "";
       return;
     }
-    const buf = await ensureBuffer(path);
+
+    let buffer;
+    try {
+      buffer = await ensureBuffer(path);
+    } catch (error) {
+      if (generation !== loadGeneration) return;
+      const message = error instanceof Error ? error.message : String(error);
+      props.onError?.(`Unable to open ${path}: ${message}`);
+      return;
+    }
+    if (generation !== loadGeneration || props.path !== path) return;
+
     if (view) view.destroy();
+    renderedPath = path;
     const state = EditorState.create({
-      doc: buf.content,
+      doc: buffer.content,
+      selection: {
+        anchor: cursorOffset(buffer.content, buffer.cursor.line, buffer.cursor.col),
+      },
       extensions: buildExtensions(path),
     });
     hostRef.innerHTML = "";
@@ -181,20 +224,44 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
     view.focus();
   }
 
-  onMount(() => {
-    loadPath(props.path);
+  // Rebuild only when the active path changes. A generation guard prevents a
+  // slower previous read from taking over after a fast tab switch.
+  createEffect(() => {
+    void loadPath(props.path);
   });
 
-  // Reload editor whenever the active path changes
+  // Clean external writes (including Codex edits) update an already mounted
+  // editor without rebuilding its history or selection.
   createEffect(() => {
-    const p = props.path;
-    if (view) {
-      // Different path → rebuild
-      const currentDoc = view.state.doc.toString();
-      const currentLen = currentDoc.length;
-      void currentLen;
-    }
-    loadPath(p);
+    void buffersVersion();
+    const path = props.path;
+    if (!path || path !== renderedPath || !view) return;
+    const buffer = getBuffer(path);
+    if (!buffer) return;
+    const current = view.state.doc.toString();
+    if (current === buffer.content) return;
+    view.dispatch({
+      changes: { from: 0, to: current.length, insert: buffer.content },
+    });
+  });
+
+  createEffect(() => {
+    const fontFamily = props.fontFamily;
+    const fontSize = props.fontSize;
+    const lineHeight = props.lineHeight;
+    const wordWrap = props.wordWrap;
+    const tabSize = props.tabSize;
+    void fontFamily;
+    void fontSize;
+    void lineHeight;
+    if (!view) return;
+    view.dispatch({
+      effects: [
+        appearanceCompartment.reconfigure(appearanceExtension()),
+        wrappingCompartment.reconfigure(wordWrap ? EditorView.lineWrapping : []),
+        tabSizeCompartment.reconfigure(EditorState.tabSize.of(tabSize ?? 2)),
+      ],
+    });
   });
 
   onCleanup(() => {
@@ -210,5 +277,13 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
     />
   );
 };
+
+function cursorOffset(content: string, lineNumber: number, column: number): number {
+  const lines = content.split("\n");
+  const lineIndex = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
+  let offset = 0;
+  for (let index = 0; index < lineIndex; index++) offset += lines[index].length + 1;
+  return offset + Math.max(0, Math.min(lines[lineIndex].length, column - 1));
+}
 
 export default CodeEditor;

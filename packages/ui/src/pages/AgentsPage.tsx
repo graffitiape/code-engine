@@ -1,14 +1,34 @@
-import { Component, createEffect, createSignal, Show } from "solid-js";
-import {
-  TicketRail,
-  PipelineStage,
-  ChatPanel,
-  TicketSeed,
-  PageSwitcher,
-  Icon,
-} from "../design";
-import type { AgentKey, Ticket, PageKey } from "../design";
+import { Component, Show, createEffect, onCleanup, onMount } from "solid-js";
+import { PageSwitcher, ProjectSwitcher } from "../design";
+import type { PageKey } from "../design";
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
+import { useWorkspace } from "../stores/workspace";
+import { AgentComposer } from "../features/agents/AgentComposer";
+import { AgentOnboarding } from "../features/agents/AgentOnboarding";
+import { AgentRail } from "../features/agents/AgentRail";
+import { AgentRuntimeBar } from "../features/agents/AgentRuntimeBar";
+import { AgentThreadView } from "../features/agents/AgentThreadView";
+import {
+  archiveAgentThread,
+  clearAgentError,
+  connectAgentListeners,
+  createAgentTask,
+  initializeAgents,
+  interruptAgentTurn,
+  logoutAgentAccount,
+  refreshAgents,
+  renameAgentThread,
+  respondToServerRequest,
+  restartCodex,
+  selectAgentThread,
+  sendAgentMessage,
+  setAgentComposerOpen,
+  setAgentEffort,
+  setAgentModel,
+  setAgentPermission,
+  useAgentState,
+} from "../features/agents/agentStore";
+import "../styles/agents.css";
 
 interface AgentsPageProps {
   activePage: PageKey;
@@ -16,32 +36,36 @@ interface AgentsPageProps {
 }
 
 const AgentsPage: Component<AgentsPageProps> = (props) => {
-  const [tickets, setTickets] = createSignal<Ticket[]>([...TicketSeed]);
-  const [currentId, setCurrentId] = createSignal<string>(TicketSeed[0].id);
-  const [openChat, setOpenChat] = createSignal<AgentKey | null>(null);
+  const workspace = useWorkspace();
+  const state = useAgentState();
 
-  createEffect(() => {
-    document.documentElement.setAttribute("data-theme", "tokyonight");
+  onMount(() => {
+    let disconnect: (() => void) | undefined;
+    void connectAgentListeners().then((cleanup) => (disconnect = cleanup));
+    onCleanup(() => disconnect?.());
   });
 
-  const current = (): Ticket => tickets().find((t) => t.id === currentId()) || tickets()[0];
+  createEffect(() => {
+    void initializeAgents(workspace.activeRoot());
+  });
 
-  const newTicket = () => {
-    const id = "CE-" + Math.floor(200 + Math.random() * 800);
-    const fresh: Ticket = {
-      id,
-      title: "New agent task — describe here",
-      prio: "med",
-      files: 1,
-      est: "1h",
-      state: "queued",
-    };
-    setTickets([fresh, ...tickets()]);
-    setCurrentId(id);
+  const ready = () => {
+    const root = workspace.activeRoot();
+    return Boolean(
+      root &&
+      !state.booting &&
+      state.cwd === root &&
+      state.server?.ready &&
+      state.account?.account
+    );
   };
+  const selectedItems = () =>
+    state.selectedThreadId ? state.feedByThread[state.selectedThreadId] ?? [] : [];
+  const selectedActive = () =>
+    Boolean(state.selectedThreadId && state.activeTurnByThread[state.selectedThreadId]);
 
   return (
-    <div class="desktop">
+    <div class="desktop agents-desktop">
       <div class="window">
         <div
           class="titlebar"
@@ -54,42 +78,91 @@ const AgentsPage: Component<AgentsPageProps> = (props) => {
             <span class="tl min" />
             <span class="tl max" />
           </div>
-          <div class="project-badge" title="Switch project">
-            <span class="logo">
-              <svg viewBox="0 0 10 10" fill="none">
-                <path d="M2 3l3-2 3 2v4L5 9 2 7V3z" stroke="white" stroke-width="0.8" />
-                <circle cx="5" cy="5" r="1" fill="white" />
-              </svg>
-            </span>
-            <span class="name">code-engine</span>
-            <Icon name="chevronDown" style={{ width: '10px', height: '10px', color: 'var(--fg-3)' }} />
-          </div>
+          <ProjectSwitcher />
           <PageSwitcher active={props.activePage} onNavigate={props.onNavigatePage} />
           <div class="tabs" />
-        </div>
-        <div class="page-root">
-          <TicketRail
-            tickets={tickets()}
-            currentId={currentId()}
-            onSelect={(id) => {
-              setCurrentId(id);
-              setOpenChat(null);
-            }}
-            onNew={newTicket}
-          />
-          <PipelineStage
-            ticket={current()}
-            onOpenChat={(a: AgentKey) => setOpenChat(a)}
-            openChatFor={openChat()}
-          />
-          <Show when={openChat()}>
-            <ChatPanel
-              agent={openChat()!}
-              ticket={current()}
-              onClose={() => setOpenChat(null)}
-            />
+          <Show when={state.server?.state === "ready"}>
+            <div class="agent-titlebar-status"><span /> Codex connected</div>
           </Show>
         </div>
+
+        <Show
+          when={ready()}
+          fallback={
+            <AgentOnboarding
+              state={state}
+              hasProject={Boolean(workspace.activeRoot())}
+              onOpenEditor={() => props.onNavigatePage("editor")}
+            />
+          }
+        >
+          <div class="agents-root">
+            <AgentRail
+              threads={state.threads}
+              currentId={state.selectedThreadId}
+              loading={state.booting}
+              onNew={() => setAgentComposerOpen(true)}
+              onRefresh={() => void refreshAgents()}
+              onSelect={(threadId) => {
+                const cwd = workspace.activeRoot();
+                if (cwd) void selectAgentThread(threadId, cwd);
+              }}
+            />
+            <section class="agent-workspace">
+              <AgentRuntimeBar
+                server={state.server!}
+                account={state.account!}
+                limits={state.rateLimits}
+                projectPath={workspace.activeRoot()!}
+                onRestart={() => void restartCodex()}
+                onLogout={() => void logoutAgentAccount()}
+              />
+              <Show
+                when={!state.composerOpen && state.selectedThread}
+                fallback={
+                  <AgentComposer
+                    models={state.models}
+                    model={state.model}
+                    effort={state.effort}
+                    permission={state.permission}
+                    projectPath={workspace.activeRoot()!}
+                    submitting={state.submitting}
+                    onModel={setAgentModel}
+                    onEffort={setAgentEffort}
+                    onPermission={setAgentPermission}
+                    onSubmit={(prompt) => void createAgentTask(prompt, workspace.activeRoot()!)}
+                    onCancel={state.selectedThread ? () => setAgentComposerOpen(false) : undefined}
+                  />
+                }
+              >
+                {(thread) => (
+                  <AgentThreadView
+                    thread={thread()}
+                    items={selectedItems()}
+                    requests={state.pendingRequests}
+                    models={state.models}
+                    model={state.model}
+                    effort={state.effort}
+                    permission={state.permission}
+                    active={selectedActive()}
+                    loading={state.loadingThread}
+                    submitting={state.submitting}
+                    error={state.error}
+                    onModel={setAgentModel}
+                    onEffort={setAgentEffort}
+                    onPermission={setAgentPermission}
+                    onSend={(text) => void sendAgentMessage(text, workspace.activeRoot()!)}
+                    onInterrupt={() => void interruptAgentTurn()}
+                    onArchive={() => void archiveAgentThread(thread().id)}
+                    onRename={(name) => renameAgentThread(thread().id, name)}
+                    onRespond={respondToServerRequest}
+                    onClearError={clearAgentError}
+                  />
+                )}
+              </Show>
+            </section>
+          </div>
+        </Show>
       </div>
     </div>
   );

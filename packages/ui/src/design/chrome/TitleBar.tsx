@@ -4,6 +4,7 @@ import { For, Show } from 'solid-js';
 import type { Tab } from '../types';
 import { Icon, FileIcon } from '../Icon';
 import { PageSwitcher, type PageKey } from './PageSwitcher';
+import { ProjectSwitcher } from './ProjectSwitcher';
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from '../../lib/titlebar';
 
 export interface TitleBarProps {
@@ -37,16 +38,7 @@ export function TitleBar(props: TitleBarProps) {
         <span class="tl min" />
         <span class="tl max" />
       </div>
-      <div class="project-badge" title="Switch project">
-        <span class="logo">
-          <svg viewBox="0 0 10 10" fill="none">
-            <path d="M2 3l3-2 3 2v4L5 9 2 7V3z" stroke="white" stroke-width="0.8" />
-            <circle cx="5" cy="5" r="1" fill="white" />
-          </svg>
-        </span>
-        <span class="name">code-engine</span>
-        <Icon name="chevronDown" style={{ width: '10px', height: '10px', color: 'var(--fg-3)' }} />
-      </div>
+      <ProjectSwitcher />
       <PageSwitcher active={props.activePage} onNavigate={props.onNavigatePage} />
       <div class="tabs">
         <For each={props.tabs}>
@@ -107,10 +99,9 @@ export function TitleBar(props: TitleBarProps) {
         <button
           class={`icon-btn ${props.activeOverlay === 'git' ? 'active' : ''}`}
           onClick={props.toggleGit}
-          title="Git panel (⌘K G)"
+          title="Git panel"
         >
           <Icon name="git" />
-          <span class="dot" style={{ background: 'var(--yellow)' }} />
         </button>
         <button
           class={`icon-btn ${props.activeOverlay === 'settings' ? 'active' : ''}`}

@@ -4,9 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-notify = "9.0.0-rc.3"
 ignore = "0.4"
-tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+regex = "1"
+tempfile = "3"

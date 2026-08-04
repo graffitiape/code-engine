@@ -1,4 +1,4 @@
-mod bridge;
+mod codex;
 mod commands;
 mod state;
 
@@ -15,18 +15,35 @@ pub fn run() {
         .init();
 
     let app_state = AppState::new();
-    let event_rx = app_state.event_rx.clone();
+    let codex = app_state.codex.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
-            commands::nvim::create_pane,
-            commands::nvim::close_pane,
-            commands::nvim::nvim_input,
-            commands::nvim::nvim_resize,
-            commands::nvim::nvim_command,
+            commands::codex::codex_server_status,
+            commands::codex::codex_server_start,
+            commands::codex::codex_server_restart,
+            commands::codex::codex_server_stop,
+            commands::codex::codex_account_read,
+            commands::codex::codex_login_chatgpt,
+            commands::codex::codex_login_device_code,
+            commands::codex::codex_login_cancel,
+            commands::codex::codex_logout,
+            commands::codex::codex_rate_limits,
+            commands::codex::codex_model_list,
+            commands::codex::codex_thread_list,
+            commands::codex::codex_thread_read,
+            commands::codex::codex_thread_start,
+            commands::codex::codex_thread_resume,
+            commands::codex::codex_thread_archive,
+            commands::codex::codex_thread_name_set,
+            commands::codex::codex_turn_start,
+            commands::codex::codex_turn_steer,
+            commands::codex::codex_turn_interrupt,
+            commands::codex::codex_pending_server_requests,
+            commands::codex::codex_respond_to_server_request,
             commands::settings::get_settings,
             commands::settings::save_settings,
             commands::workspace::set_workspace_root,
@@ -35,20 +52,34 @@ pub fn run() {
             commands::workspace::read_file_text,
             commands::workspace::write_file_text,
             commands::workspace::list_workspace_files,
+            commands::workspace::create_file,
+            commands::workspace::create_directory,
+            commands::workspace::rename_path,
+            commands::workspace::trash_path,
+            commands::workspace::list_trash,
+            commands::workspace::restore_from_trash,
+            commands::external::open_external_url,
+            commands::search::search_workspace,
+            commands::search::replace_all_workspace,
             commands::git::git_status,
+            commands::git::git_diff,
+            commands::git::git_stage_file,
+            commands::git::git_unstage_file,
+            commands::git::git_stage_all,
+            commands::git::git_unstage_all,
+            commands::git::git_commit,
+            commands::git::git_stash,
+            commands::git::git_recent_log,
+            commands::git::git_branches,
+            commands::git::git_checkout_branch,
             commands::window::titlebar_double_click,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
-
-            tauri::async_runtime::spawn(async move {
-                bridge::start_event_bridge(app_handle, event_rx).await;
-            });
+            codex.attach_app(app_handle);
 
             Ok(())
         })
-        .run(tauri::generate_context!(
-            "tauri.conf.json"
-        ))
+        .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running CodeEngine");
 }

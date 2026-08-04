@@ -1,101 +1,209 @@
 import { createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
-import {
-  getWorkspaceRoot,
-  readDir,
-  setWorkspaceRoot,
-  type FsNode,
-} from "../bridge/tauri";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../bridge/tauri";
 
-const RECENTS_KEY = "ce.recentRoots";
+const LEGACY_RECENTS_KEY = "ce.recentRoots";
+const PROJECTS_KEY = "ce.projects.v2";
 const ACTIVE_KEY = "ce.activeRoot";
+const MAX_PROJECTS = 12;
 
-const [activeRoot, setActiveRootSig] = createSignal<string | null>(null);
-const [recents, setRecents] = createSignal<string[]>(loadRecents());
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  lastOpenedAt: number;
+}
 
-function loadRecents(): string[] {
+function projectName(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const parts = trimmed.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
+function projectFromPath(path: string, lastOpenedAt = Date.now()): Project {
+  return {
+    id: path,
+    name: projectName(path),
+    path,
+    lastOpenedAt,
+  };
+}
+
+function loadProjects(): Project[] {
   try {
-    const raw = localStorage.getItem(RECENTS_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr.filter((s) => typeof s === "string") : [];
+    const raw = localStorage.getItem(PROJECTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter(
+            (item): item is Project =>
+              item &&
+              typeof item.path === "string" &&
+              typeof item.lastOpenedAt === "number",
+          )
+          .map((item) => ({
+            ...item,
+            id: item.path,
+            name: projectName(item.path),
+          }))
+          .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
+          .slice(0, MAX_PROJECTS);
+      }
+    }
+
+    const legacy = localStorage.getItem(LEGACY_RECENTS_KEY);
+    if (!legacy) return [];
+    const paths = JSON.parse(legacy);
+    if (!Array.isArray(paths)) return [];
+    const now = Date.now();
+    return paths
+      .filter((path): path is string => typeof path === "string")
+      .map((path, index) => projectFromPath(path, now - index))
+      .slice(0, MAX_PROJECTS);
   } catch {
     return [];
   }
 }
 
-function persistRecents(list: string[]) {
+const [activeRoot, setActiveRootSignal] = createSignal<string | null>(null);
+const [projects, setProjects] = createSignal<Project[]>(loadProjects());
+const [initialized, setInitialized] = createSignal(false);
+const [switching, setSwitching] = createSignal(false);
+const [workspaceError, setWorkspaceError] = createSignal<string | null>(null);
+const [filesVersion, setFilesVersion] = createSignal(0);
+const recents = () => projects().map((project) => project.path);
+
+let initializePromise: Promise<string | null> | null = null;
+
+function persistProjects(list: Project[]) {
   try {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, 8)));
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(list.slice(0, MAX_PROJECTS)));
+    localStorage.setItem(
+      LEGACY_RECENTS_KEY,
+      JSON.stringify(list.slice(0, MAX_PROJECTS).map((project) => project.path)),
+    );
   } catch {
-    /* ignore */
+    // A disabled localStorage should not make opening a project fail.
   }
 }
 
-/** Set the active root, persist locally, and inform the backend. */
-export async function setActiveRoot(path: string | null): Promise<void> {
-  setActiveRootSig(path);
-  if (path) {
+function rememberProject(path: string) {
+  const next = [
+    projectFromPath(path),
+    ...projects().filter((project) => project.path !== path),
+  ].slice(0, MAX_PROJECTS);
+  setProjects(next);
+  persistProjects(next);
+}
+
+/**
+ * Verify and activate a project. The backend validates and canonicalizes the
+ * directory before frontend state changes, so stale recents cannot displace a
+ * valid current project.
+ */
+export async function setActiveRoot(path: string): Promise<void> {
+  setSwitching(true);
+  setWorkspaceError(null);
+  try {
+    const canonicalPath = await setWorkspaceRoot(path);
+    setActiveRootSignal(canonicalPath);
     try {
-      localStorage.setItem(ACTIVE_KEY, path);
+      localStorage.setItem(ACTIVE_KEY, canonicalPath);
     } catch {
-      /* ignore */
+      // Persistence is best-effort; the active project still works this run.
     }
-    const next = [path, ...recents().filter((r) => r !== path)];
-    setRecents(next);
-    persistRecents(next);
-    await setWorkspaceRoot(path);
-  } else {
-    try {
-      localStorage.removeItem(ACTIVE_KEY);
-    } catch {
-      /* ignore */
-    }
+    rememberProject(canonicalPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setWorkspaceError(message);
+    throw error;
+  } finally {
+    setSwitching(false);
   }
 }
 
-/** Restore the most recent root on app start, if it still exists. */
-export async function restoreActiveRoot(): Promise<string | null> {
-  // Backend may already have one set (rare; survives only across hot reload).
-  let backendRoot: string | null = null;
-  try {
-    backendRoot = await getWorkspaceRoot();
-  } catch {
-    backendRoot = null;
-  }
-  const local = (() => {
+/** Restore the last valid project once for the whole application. */
+export function initializeWorkspace(): Promise<string | null> {
+  if (initializePromise) return initializePromise;
+  initializePromise = (async () => {
+    let backendRoot: string | null = null;
     try {
-      return localStorage.getItem(ACTIVE_KEY);
+      backendRoot = await getWorkspaceRoot();
     } catch {
-      return null;
+      // The frontend-persisted root is still usable after a backend restart.
     }
-  })();
-  const candidate = backendRoot ?? local;
-  if (!candidate) return null;
-  // Verify the path still exists by trying to read it.
-  try {
-    await readDir(candidate);
-    setActiveRootSig(candidate);
-    await setWorkspaceRoot(candidate);
-    return candidate;
-  } catch {
+
+    let localRoot: string | null = null;
+    try {
+      localRoot = localStorage.getItem(ACTIVE_KEY);
+    } catch {
+      // localStorage can be unavailable in hardened webviews.
+    }
+
+    const candidates = [backendRoot, localRoot].filter(
+      (path, index, all): path is string =>
+        typeof path === "string" && all.indexOf(path) === index,
+    );
+
+    for (const candidate of candidates) {
+      try {
+        await setActiveRoot(candidate);
+        setInitialized(true);
+        return candidate;
+      } catch {
+        // Try the next candidate without clearing the remembered recent.
+      }
+    }
+
+    setInitialized(true);
     return null;
-  }
+  })();
+  return initializePromise;
 }
 
-/** Open a system folder picker; if the user picks one, activate it. */
-export async function pickFolder(): Promise<string | null> {
+/** Backwards-compatible alias used by the editor coordinator. */
+export const restoreActiveRoot = initializeWorkspace;
+
+/** Open the native folder picker without changing project state. */
+export async function chooseFolder(): Promise<string | null> {
   const picked = await open({ directory: true, multiple: false });
-  if (typeof picked !== "string") return null;
+  return typeof picked === "string" ? picked : null;
+}
+
+/** Open the native folder picker and activate the selected folder. */
+export async function pickFolder(): Promise<string | null> {
+  const picked = await chooseFolder();
+  if (!picked) return null;
   await setActiveRoot(picked);
   return picked;
+}
+
+export function removeRecentProject(path: string) {
+  if (path === activeRoot()) return;
+  const next = projects().filter((project) => project.path !== path);
+  setProjects(next);
+  persistProjects(next);
+}
+
+export function clearWorkspaceError() {
+  setWorkspaceError(null);
+}
+
+/** Notify mounted editor surfaces that project files may have changed externally. */
+export function notifyWorkspaceFilesChanged(path: string) {
+  if (path !== activeRoot()) return;
+  setFilesVersion((version) => version + 1);
 }
 
 export function useWorkspace() {
   return {
     activeRoot,
+    projects,
     recents,
+    initialized,
+    switching,
+    filesVersion,
+    error: workspaceError,
   };
 }
-
-export type { FsNode };

@@ -1,4 +1,4 @@
-/* Base reset + integration glue. Design tokens live in design.css and pipeline.css. */
+/* Base reset + integration glue. Design tokens live in design.css. */
 
 * {
   margin: 0;
@@ -19,11 +19,4 @@ html, body, #root {
 
 #root {
   display: block;
-}
-
-/* PaneView is the real nvim canvas — fill the .panes slot edge-to-edge */
-.panes .pane-view {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
 }

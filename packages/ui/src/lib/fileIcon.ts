@@ -1,5 +1,5 @@
 // Map a filename to one of the icon keys understood by FileIcon.
-// Extend the switch as more icons are added to design/data.ts.
+// Extend the switch as more icons are added to the design icon map.
 
 export function iconForName(name: string): string {
   const lower = name.toLowerCase();

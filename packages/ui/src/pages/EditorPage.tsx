@@ -2,6 +2,8 @@ import { Component, For, createSignal, createEffect, onMount, onCleanup, Show } 
 import { createStore } from "solid-js/store";
 import {
   TitleBar,
+  PageSwitcher,
+  ProjectSwitcher,
   Sidebar,
   Breadcrumbs,
   StatusBar,
@@ -11,41 +13,55 @@ import {
   SearchReplace,
   SettingsPanel,
 } from "../design";
+import { save as showSaveDialog } from "@tauri-apps/plugin-dialog";
 import type { FileNode, Tab } from "../design/types";
 import type { PageKey } from "../design";
 import CodeEditor from "../components/editor/CodeEditor";
-import { readDir, type FsNode } from "../bridge/tauri";
 import {
-  pickFolder,
-  restoreActiveRoot,
+  createDirectory,
+  createFile,
+  listTrash,
+  readDir,
+  renamePath,
+  restoreFromTrash,
+  trashPath,
+  type FsNode,
+  type TrashEntry,
+} from "../bridge/tauri";
+import {
+  chooseFolder as showFolderDialog,
   setActiveRoot,
   useWorkspace,
 } from "../stores/workspace";
 import {
+  acceptExternalVersion,
   activeBufferPath,
   clearBuffers,
   closeBuffer,
+  createUntitledBuffer,
   ensureBuffer,
   getBuffer,
+  getDirtyBufferPaths,
   isDirty,
+  isUntitled,
+  keepLocalVersion,
+  refreshBuffersFromDisk,
+  remapBufferPaths,
   saveBuffer,
+  saveBufferAs,
   setActivePath,
+  updateCursor,
   useBuffersVersion,
 } from "../stores/buffers";
 import { basename, dirname, iconForName } from "../lib/fileIcon";
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
-
-const isTauri = (): boolean =>
-  typeof window !== "undefined" &&
-  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+import { loadEditorSession, saveEditorSession } from "../stores/editor-session";
+import { useSettingsStore } from "../stores/settings";
 
 type OverlayName = "palette" | "git" | "minimap" | "search" | "settings" | null;
 
-const TWEAK_DEFAULTS = {
-  theme: "tokyonight",
-  vibrancy: "on",
-  density: "compact",
-};
+const messageForError = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
 
 function nodeFromFs(entry: FsNode, depth: number): FileNode {
   return {
@@ -75,13 +91,20 @@ function findIndexPath(
   return null;
 }
 
+function collectExpandedPaths(nodes: FileNode[], paths = new Set<string>()): Set<string> {
+  for (const node of nodes) {
+    if (node.type === "dir" && node.expanded && node.path) paths.add(node.path);
+    if (node.children?.length) collectExpandedPaths(node.children, paths);
+  }
+  return paths;
+}
+
 interface EditorPageProps {
   activePage: PageKey;
   onNavigatePage: (page: PageKey) => void;
 }
 
 const EditorPage: Component<EditorPageProps> = (props) => {
-  const [settings, setSettings] = createStore({ ...TWEAK_DEFAULTS });
   const [treeStore, setTreeStore] = createStore<{ nodes: FileNode[] }>({
     nodes: [],
   });
@@ -89,24 +112,41 @@ const EditorPage: Component<EditorPageProps> = (props) => {
   const [activeTabId, setActiveTabId] = createSignal<string>("");
   const [sidebarOpen, setSidebarOpen] = createSignal(true);
   const [activeOverlay, setActiveOverlay] = createSignal<OverlayName>(null);
+  const [paletteMode, setPaletteMode] = createSignal<"files" | "commands">("files");
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);
+  const [trashEntries, setTrashEntries] = createSignal<TrashEntry[]>([]);
+  let loadedRoot: string | null | undefined;
+  let rootLoadGeneration = 0;
+  let sessionGeneration = 0;
+  let sessionReadyRoot: string | null = null;
+  let fileNavigationGeneration = 0;
 
-  const tauriHost = isTauri();
   const workspace = useWorkspace();
+  const { settings: appSettings } = useSettingsStore();
   const buffersVer = useBuffersVersion();
 
-  // Theme + density attrs
-  createEffect(() => {
-    document.documentElement.setAttribute("data-theme", settings.theme);
-    document.documentElement.setAttribute("data-density", settings.density);
-    document.documentElement.setAttribute("data-vibrancy", settings.vibrancy);
-  });
-
-  async function loadRootTree(rootPath: string) {
-    setBusy("Loading workspace…");
+  async function loadRootTree(rootPath: string, announce = true) {
+    const generation = ++rootLoadGeneration;
+    const expandedPaths = collectExpandedPaths(treeStore.nodes);
+    expandedPaths.add(rootPath);
+    if (announce) setBusy("Loading workspace…");
     try {
-      const entries = await readDir(rootPath);
+      const loadChildren = async (directory: string, depth: number): Promise<FileNode[]> => {
+        const entries = await readDir(directory);
+        return Promise.all(
+          entries.map(async (entry) => {
+            const node = nodeFromFs(entry, depth);
+            if (node.type === "dir" && node.path && expandedPaths.has(node.path)) {
+              node.expanded = true;
+              node.children = await loadChildren(node.path, depth + 1);
+            }
+            return node;
+          }),
+        );
+      };
+      const children = await loadChildren(rootPath, 1);
+      if (generation !== rootLoadGeneration || workspace.activeRoot() !== rootPath) return;
       const rootName = basename(rootPath);
       const root: FileNode = {
         type: "dir",
@@ -114,32 +154,34 @@ const EditorPage: Component<EditorPageProps> = (props) => {
         depth: 0,
         path: rootPath,
         expanded: true,
-        children: entries.map((e) => nodeFromFs(e, 1)),
+        children,
       };
       setTreeStore("nodes", [root]);
     } finally {
-      setBusy(null);
+      if (announce && generation === rootLoadGeneration) setBusy(null);
     }
   }
 
-  async function bootstrap() {
-    if (!tauriHost) return;
-    const restored = await restoreActiveRoot();
-    if (restored) {
-      await loadRootTree(restored);
-    }
+  const confirmDiscardDirty = (): boolean => {
+    const dirty = getDirtyBufferPaths();
+    if (!dirty.length) return true;
+    return window.confirm(
+      `Discard unsaved changes in ${dirty.length} open ${dirty.length === 1 ? "file" : "files"}?`,
+    );
+  };
+
+  async function activateWorkspace(path: string) {
+    if (path === workspace.activeRoot()) return;
+    if (!confirmDiscardDirty()) return;
+    await setActiveRoot(path);
   }
 
   async function chooseFolder() {
     setError(null);
     try {
-      const picked = await pickFolder();
+      const picked = await showFolderDialog();
       if (!picked) return;
-      // Reset buffer state when switching workspaces.
-      clearBuffers();
-      setTabs([]);
-      setActiveTabId("");
-      await loadRootTree(picked);
+      await activateWorkspace(picked);
     } catch (e) {
       console.error("[CE] chooseFolder failed:", e);
       setError(String(e));
@@ -149,11 +191,7 @@ const EditorPage: Component<EditorPageProps> = (props) => {
   async function openRecent(path: string) {
     setError(null);
     try {
-      clearBuffers();
-      setTabs([]);
-      setActiveTabId("");
-      await setActiveRoot(path);
-      await loadRootTree(path);
+      await activateWorkspace(path);
     } catch (e) {
       console.error("[CE] openRecent failed:", e);
       setError(String(e));
@@ -162,16 +200,17 @@ const EditorPage: Component<EditorPageProps> = (props) => {
 
   // Keyboard shortcuts (workspace-level, NOT editor-level — those live inside CodeMirror)
   onMount(async () => {
-    await bootstrap();
-
     const handler = (e: KeyboardEvent) => {
+      if (props.activePage !== "editor") return;
       const cmd = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
       if (cmd && e.shiftKey && key === "p") {
         e.preventDefault();
+        setPaletteMode("commands");
         setActiveOverlay("palette");
       } else if (cmd && key === "p" && !e.shiftKey) {
         e.preventDefault();
+        setPaletteMode("files");
         setActiveOverlay("palette");
       } else if (cmd && e.shiftKey && key === "f") {
         e.preventDefault();
@@ -187,7 +226,10 @@ const EditorPage: Component<EditorPageProps> = (props) => {
         setSidebarOpen((o) => !o);
       } else if (cmd && key === "o" && !e.shiftKey) {
         e.preventDefault();
-        chooseFolder();
+        void chooseFolder();
+      } else if (cmd && key === "t" && !e.shiftKey) {
+        e.preventDefault();
+        void newTab();
       } else if (cmd && key === "w" && !e.shiftKey) {
         // Close active tab
         const id = activeTabId();
@@ -200,7 +242,102 @@ const EditorPage: Component<EditorPageProps> = (props) => {
       }
     };
     window.addEventListener("keydown", handler);
-    onCleanup(() => window.removeEventListener("keydown", handler));
+    const refreshWorkspace = () => {
+      if (props.activePage !== "editor") return;
+      void refreshProjectFiles().catch((refreshError) => setError(messageForError(refreshError)));
+    };
+    const refreshTimer = window.setInterval(refreshWorkspace, 5000);
+    window.addEventListener("focus", refreshWorkspace);
+    onCleanup(() => {
+      window.removeEventListener("keydown", handler);
+      window.removeEventListener("focus", refreshWorkspace);
+      window.clearInterval(refreshTimer);
+    });
+  });
+
+  // Project changes are global (the selector is shared by Editor and Agents).
+  // Reset editor-local state and load the new tree whenever that root changes.
+  createEffect(() => {
+    const root = workspace.activeRoot();
+    if (root === loadedRoot) return;
+    loadedRoot = root;
+    const generation = ++sessionGeneration;
+    sessionReadyRoot = null;
+    rootLoadGeneration += 1;
+    fileNavigationGeneration += 1;
+    clearBuffers();
+    setTabs([]);
+    setActiveTabId("");
+    setTreeStore("nodes", []);
+    setTrashEntries([]);
+    setError(null);
+    if (!root) return;
+
+    void loadRootTree(root);
+    void listTrash()
+      .then((entries) => {
+        if (generation === sessionGeneration) setTrashEntries(entries);
+      })
+      .catch(() => undefined);
+    const session = loadEditorSession(root);
+    if (!session?.tabs.length) {
+      sessionReadyRoot = root;
+      return;
+    }
+
+    const restoredTabs: Tab[] = session.tabs.map((path) => ({
+      id: path,
+      name: basename(path),
+      icon: iconForName(path),
+      dirty: false,
+    }));
+    const active =
+      session.activeTabId && session.tabs.includes(session.activeTabId)
+        ? session.activeTabId
+        : session.tabs[0];
+    setTabs(restoredTabs);
+    setActiveTabId(active);
+    setActivePath(active);
+    void ensureBuffer(active)
+      .catch((restoreError) => {
+        if (generation !== sessionGeneration) return;
+        setTabs((items) => items.filter((tab) => tab.id !== active));
+        setActiveTabId("");
+        setActivePath(null);
+        setError(
+          `Could not restore ${basename(active)}: ${
+            restoreError instanceof Error ? restoreError.message : String(restoreError)
+          }`,
+        );
+      })
+      .finally(() => {
+        if (generation === sessionGeneration) sessionReadyRoot = root;
+      });
+  });
+
+  let observedFilesVersion = workspace.filesVersion();
+  createEffect(() => {
+    const version = workspace.filesVersion();
+    if (version === observedFilesVersion) return;
+    observedFilesVersion = version;
+    void refreshProjectFiles().catch((refreshError) => setError(messageForError(refreshError)));
+  });
+
+  let previousPage = props.activePage;
+  createEffect(() => {
+    const page = props.activePage;
+    if (page === "editor" && previousPage !== "editor") {
+      void refreshProjectFiles().catch((refreshError) => setError(messageForError(refreshError)));
+    }
+    previousPage = page;
+  });
+
+  createEffect(() => {
+    const root = workspace.activeRoot();
+    const currentTabs = tabs();
+    const currentActive = activeTabId();
+    if (!root || sessionReadyRoot !== root) return;
+    saveEditorSession(root, currentTabs, currentActive);
   });
 
   // Lazy-load child entries for a directory the first time it expands.
@@ -251,6 +388,157 @@ const EditorPage: Component<EditorPageProps> = (props) => {
     (setTreeStore as any)(...args);
   }
 
+  function collapseAll() {
+    const collapse = (nodes: FileNode[]): FileNode[] =>
+      nodes.map((node) => ({
+        ...node,
+        expanded: node.type === "dir" ? false : node.expanded,
+        children: node.children ? collapse(node.children) : node.children,
+      }));
+    setTreeStore("nodes", collapse(treeStore.nodes));
+  }
+
+  const joinWorkspacePath = (parent: string, child: string) =>
+    `${parent.replace(/[\\/]+$/, "")}/${child}`;
+
+  async function createExplorerFile(parent?: FileNode) {
+    const root = workspace.activeRoot();
+    const directory = parent?.type === "dir" ? parent.path : root;
+    if (!directory) return;
+    const name = window.prompt("New file path", "");
+    if (!name?.trim()) return;
+    const path = joinWorkspacePath(directory, name.trim());
+    setBusy("Creating file…");
+    setError(null);
+    try {
+      await createFile(path);
+      if (workspace.activeRoot() !== root) return;
+      await loadRootTree(root!);
+      await openFile(path);
+    } catch (createError) {
+      setError(messageForError(createError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function createExplorerDirectory(parent?: FileNode) {
+    const root = workspace.activeRoot();
+    const directory = parent?.type === "dir" ? parent.path : root;
+    if (!directory) return;
+    const name = window.prompt("New folder path", "");
+    if (!name?.trim()) return;
+    setBusy("Creating folder…");
+    setError(null);
+    try {
+      await createDirectory(joinWorkspacePath(directory, name.trim()));
+      if (workspace.activeRoot() !== root) return;
+      await loadRootTree(root!);
+    } catch (createError) {
+      setError(messageForError(createError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function renameExplorerNode(node: FileNode) {
+    if (!node.path || node.depth === 0) return;
+    const source = node.path;
+    const root = workspace.activeRoot();
+    const name = window.prompt("Rename to", node.name)?.trim();
+    if (!name || name === node.name) return;
+    if (name === "." || name === ".." || /[\\/]/.test(name)) {
+      setError("Enter a single file or folder name without path separators.");
+      return;
+    }
+    const destination = joinWorkspacePath(dirname(source), name);
+    const remappedTabs = tabs().map((tab) =>
+      tab.id === source || tab.id.startsWith(`${source}/`)
+        ? `${destination}${tab.id.slice(source.length)}`
+        : tab.id,
+    );
+    if (new Set(remappedTabs).size !== remappedTabs.length) {
+      setError("The renamed path conflicts with another open tab.");
+      return;
+    }
+
+    setBusy("Renaming…");
+    setError(null);
+    try {
+      await renamePath(source, destination);
+      if (workspace.activeRoot() !== root) return;
+      remapBufferPaths(source, destination);
+      setTabs((items) =>
+        items.map((tab) => {
+          if (tab.id !== source && !tab.id.startsWith(`${source}/`)) return tab;
+          const id = `${destination}${tab.id.slice(source.length)}`;
+          return { ...tab, id, name: basename(id), icon: iconForName(id) };
+        }),
+      );
+      const active = activeTabId();
+      if (active === source || active.startsWith(`${source}/`)) {
+        const id = `${destination}${active.slice(source.length)}`;
+        setActiveTabId(id);
+        setActivePath(id);
+      }
+      await loadRootTree(root!);
+    } catch (renameError) {
+      setError(messageForError(renameError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function trashExplorerNode(node: FileNode) {
+    if (!node.path || node.depth === 0) return;
+    const source = node.path;
+    const root = workspace.activeRoot();
+    const affects = (path: string) => path === source || path.startsWith(`${source}/`);
+    const affectedTabs = tabs().filter((tab) => affects(tab.id));
+    const dirtyCount = getDirtyBufferPaths().filter(affects).length;
+    const warning = dirtyCount
+      ? ` This will discard unsaved changes in ${dirtyCount} open ${dirtyCount === 1 ? "file" : "files"}.`
+      : "";
+    if (!window.confirm(`Move ${node.name} to recoverable trash?${warning}`)) return;
+
+    setBusy("Moving to trash…");
+    setError(null);
+    try {
+      const entry = await trashPath(source);
+      if (workspace.activeRoot() !== root) return;
+      affectedTabs.forEach((tab) => closeBuffer(tab.id));
+      const remaining = tabs().filter((tab) => !affects(tab.id));
+      setTabs(remaining);
+      if (affects(activeTabId())) {
+        const next = remaining[0]?.id ?? "";
+        setActiveTabId(next);
+        setActivePath(next || null);
+      }
+      setTrashEntries((entries) => [entry, ...entries.filter((item) => item.trashedPath !== entry.trashedPath)]);
+      await loadRootTree(root!);
+    } catch (trashError) {
+      setError(messageForError(trashError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function restoreTrashEntry(entry: TrashEntry) {
+    const root = workspace.activeRoot();
+    setBusy("Restoring file…");
+    setError(null);
+    try {
+      await restoreFromTrash(entry);
+      if (workspace.activeRoot() !== root) return;
+      setTrashEntries(await listTrash());
+      await loadRootTree(root!);
+    } catch (restoreError) {
+      setError(messageForError(restoreError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   function ensureTab(path: string) {
     setTabs((arr) => {
       if (arr.some((t) => t.id === path)) return arr;
@@ -280,7 +568,41 @@ const EditorPage: Component<EditorPageProps> = (props) => {
     }
   }
 
+  async function openFileAt(path: string, line: number, column: number) {
+    const generation = ++fileNavigationGeneration;
+    const reopenActive = activeTabId() === path;
+    try {
+      await ensureBuffer(path);
+      if (generation !== fileNavigationGeneration) return;
+      updateCursor(path, line, column);
+      // CodeMirror seeds its selection from the buffer when it mounts. Briefly
+      // unmount an already-active file so repeated results in one file also
+      // move the caret and viewport to the requested location.
+      if (reopenActive) {
+        setActiveTabId("");
+        setActivePath(null);
+        await Promise.resolve();
+        if (generation !== fileNavigationGeneration) return;
+      }
+      ensureTab(path);
+    } catch (openError) {
+      setError(messageForError(openError));
+    }
+  }
+
+  async function refreshProjectFiles() {
+    const changes = await refreshBuffersFromDisk();
+    if (changes.some((change) => change.state === "conflict" || change.state === "missing")) {
+      setError("One or more open files changed outside Code Engine.");
+    }
+    const root = workspace.activeRoot();
+    if (root) await loadRootTree(root, false);
+  }
+
   function closeTab(id: string) {
+    if (isDirty(id) && !window.confirm(`Close ${basename(id)} without saving?`)) {
+      return;
+    }
     const arr = tabs();
     const idx = arr.findIndex((t) => t.id === id);
     setTabs(arr.filter((t) => t.id !== id));
@@ -298,12 +620,49 @@ const EditorPage: Component<EditorPageProps> = (props) => {
   }
 
   async function newTab() {
-    // Create an unsaved scratch buffer in memory.
     const id = `untitled-${Date.now()}`;
     setTabs([...tabs(), { id, name: "untitled", icon: "file", dirty: false }]);
     setActiveTabId(id);
     setActivePath(id);
-    await ensureBuffer(id);
+    createUntitledBuffer(id);
+  }
+
+  async function savePath(path: string) {
+    setError(null);
+    try {
+      if (!isUntitled(path)) {
+        await saveBuffer(path);
+        return;
+      }
+
+      const root = workspace.activeRoot();
+      const destination = await showSaveDialog({
+        title: "Save File",
+        defaultPath: root ? `${root}/untitled` : "untitled",
+      });
+      if (typeof destination !== "string") return;
+      await saveBufferAs(path, destination);
+      setTabs((items) =>
+        items.map((tab) =>
+          tab.id === path
+            ? {
+                ...tab,
+                id: destination,
+                name: basename(destination),
+                icon: iconForName(destination),
+                dirty: false,
+              }
+            : tab,
+        ),
+      );
+      setActiveTabId(destination);
+      setActivePath(destination);
+      if (root) await loadRootTree(root);
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : String(saveError);
+      setError(message);
+      throw saveError;
+    }
   }
 
   // Sync tab dirty state with buffer dirty
@@ -328,6 +687,13 @@ const EditorPage: Component<EditorPageProps> = (props) => {
     const id = activeTabId();
     if (!id || id.startsWith("untitled-")) return undefined;
     return id;
+  };
+
+  const currentConflict = () => {
+    void buffersVer();
+    const buffer = getBuffer(activeTabId());
+    if (!buffer || (!buffer.missingOnDisk && buffer.externalContent === null)) return null;
+    return buffer;
   };
 
   const breadcrumbsFile = () => {
@@ -364,7 +730,6 @@ const EditorPage: Component<EditorPageProps> = (props) => {
             <>
               <div
                 class="titlebar titlebar-empty"
-                aria-hidden="true"
                 onMouseDown={handleTitlebarMouseDown}
                 onMouseUp={handleTitlebarMouseUp}
               >
@@ -373,13 +738,16 @@ const EditorPage: Component<EditorPageProps> = (props) => {
                   <span class="tl min" />
                   <span class="tl max" />
                 </div>
+                <ProjectSwitcher />
+                <PageSwitcher active={props.activePage} onNavigate={props.onNavigatePage} />
+                <div class="tabs" />
               </div>
               <EmptyWorkspace
                 onPick={chooseFolder}
                 onOpenRecent={openRecent}
                 recents={workspace.recents()}
                 busy={busy()}
-                error={error()}
+                error={error() ?? workspace.error()}
               />
             </>
           }
@@ -393,7 +761,10 @@ const EditorPage: Component<EditorPageProps> = (props) => {
             }}
             onTabClose={closeTab}
             onNewTab={newTab}
-            onCommandPalette={() => setActiveOverlay("palette")}
+            onCommandPalette={() => {
+              setPaletteMode("commands");
+              setActiveOverlay("palette");
+            }}
             toggleSidebar={() => setSidebarOpen((o) => !o)}
             toggleGit={() => toggleOverlay("git")}
             toggleMinimap={() => toggleOverlay("minimap")}
@@ -411,14 +782,54 @@ const EditorPage: Component<EditorPageProps> = (props) => {
               openFile={openFile as any}
               openFilePaths={openFilePaths()}
               collapsed={!sidebarOpen()}
+              onNewFile={() => void createExplorerFile()}
+              onNewFileIn={(node) => void createExplorerFile(node)}
+              onNewFolder={(node) => void createExplorerDirectory(node)}
+              onRename={(node) => void renameExplorerNode(node)}
+              onTrash={(node) => void trashExplorerNode(node)}
+              trashEntries={trashEntries()}
+              onRestore={(entry) => void restoreTrashEntry(entry)}
+              onCollapseAll={collapseAll}
             />
             <div class="workspace">
               <Show when={breadcrumbsFile()}>
                 <Breadcrumbs
                   file={breadcrumbsFile()}
                   diagCounts={diagCounts}
-                  lspName="text"
                 />
+              </Show>
+              <Show when={currentConflict()}>
+                {(buffer) => (
+                  <div class="external-change-banner">
+                    <div>
+                      <strong>{buffer().missingOnDisk ? "File removed on disk" : "File changed on disk"}</strong>
+                      <span>
+                        {buffer().missingOnDisk
+                          ? "Keep your buffer to recreate it, or close the tab."
+                          : "Choose which version should remain open."}
+                      </span>
+                    </div>
+                    <Show when={buffer().externalContent !== null}>
+                      <button
+                        type="button"
+                        onClick={() => acceptExternalVersion(buffer().path)}
+                      >
+                        Use disk version
+                      </button>
+                    </Show>
+                    <button
+                      type="button"
+                      class="primary"
+                      onClick={() =>
+                        void keepLocalVersion(buffer().path).catch((saveError) =>
+                          setError(messageForError(saveError)),
+                        )
+                      }
+                    >
+                      Keep mine
+                    </button>
+                  </div>
+                )}
               </Show>
               <div class="panes">
                 <Show
@@ -430,7 +841,16 @@ const EditorPage: Component<EditorPageProps> = (props) => {
                   }
                 >
                   <div class="pane focused" style={{ flex: "1", "min-width": "0" }}>
-                    <CodeEditor path={activeTabId()} />
+                    <CodeEditor
+                      path={activeTabId()}
+                      onSave={savePath}
+                      onError={setError}
+                      fontFamily={appSettings.font_family}
+                      fontSize={appSettings.font_size}
+                      lineHeight={appSettings.line_height}
+                      wordWrap={appSettings.word_wrap}
+                      tabSize={appSettings.tab_size}
+                    />
                   </div>
                 </Show>
               </div>
@@ -453,31 +873,94 @@ const EditorPage: Component<EditorPageProps> = (props) => {
             onClose={() => setActiveOverlay(null)}
             onOpenFile={openFile as any}
             workspaceRoot={workspace.activeRoot()}
+            mode={paletteMode()}
+            commands={[
+              {
+                id: "file.new",
+                label: "New File",
+                detail: "Create an untitled editor buffer",
+                shortcut: "⌘T",
+                icon: "plus",
+                run: newTab,
+              },
+              {
+                id: "project.open",
+                label: "Open Folder…",
+                detail: "Switch to another project",
+                shortcut: "⌘O",
+                icon: "folder",
+                run: chooseFolder,
+              },
+              {
+                id: "search.project",
+                label: "Find in Project",
+                detail: "Search and replace across the active project",
+                shortcut: "⌘⇧F",
+                icon: "search",
+                run: () => { setActiveOverlay("search"); },
+              },
+              {
+                id: "git.open",
+                label: "Open Source Control",
+                detail: "Review, stage, and commit changes",
+                icon: "git",
+                run: () => { setActiveOverlay("git"); },
+              },
+              {
+                id: "view.sidebar",
+                label: sidebarOpen() ? "Hide Explorer" : "Show Explorer",
+                shortcut: "⌘B",
+                icon: "file",
+                run: () => { setSidebarOpen((value) => !value); },
+              },
+              {
+                id: "view.agents",
+                label: "Open Agents",
+                detail: "Work with Codex on this project",
+                icon: "bolt",
+                run: () => props.onNavigatePage("agents"),
+              },
+              {
+                id: "settings.open",
+                label: "Open Settings",
+                shortcut: "⌘,",
+                icon: "settings",
+                run: () => { setActiveOverlay("settings"); },
+              },
+            ]}
           />
         </Show>
         <Show when={activeOverlay() === "minimap"}>
           <Minimap onClose={() => setActiveOverlay(null)} onOpenFile={openFile as any} />
         </Show>
         <Show when={activeOverlay() === "search"}>
-          <SearchReplace onClose={() => setActiveOverlay(null)} />
+          <SearchReplace
+            workspaceRoot={workspace.activeRoot()}
+            onSelectResult={(location) =>
+              openFileAt(location.path, location.line, location.column)
+            }
+            onReplaced={refreshProjectFiles}
+            onClose={() => setActiveOverlay(null)}
+          />
         </Show>
         <Show when={activeOverlay() === "git"}>
           <GitPanel
             onClose={() => setActiveOverlay(null)}
             workspaceRoot={workspace.activeRoot()}
             onOpenFile={(p: string) => openFile(p)}
+            onRepositoryChanged={refreshProjectFiles}
           />
         </Show>
         <Show when={activeOverlay() === "settings"}>
-          <SettingsPanel
-            onClose={() => setActiveOverlay(null)}
-            settings={settings}
-            setSettings={(updater: any) => {
-              const next =
-                typeof updater === "function" ? updater(settings) : updater;
-              setSettings(next);
-            }}
-          />
+          <SettingsPanel onClose={() => setActiveOverlay(null)} />
+        </Show>
+        <Show when={error() && hasWorkspace()}>
+          <div class="editor-error-toast" role="alert">
+            <span>{error()}</span>
+            <button type="button" onClick={() => setError(null)} aria-label="Dismiss error">
+              ×
+            </button>
+          </div>
         </Show>
       </div>
     </div>

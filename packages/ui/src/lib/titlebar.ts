@@ -13,6 +13,7 @@ const INTERACTIVE_TITLEBAR_SELECTOR = [
   ".tab-new",
   ".page-pill",
   ".project-badge",
+  ".project-menu",
 ].join(", ");
 
 function isInteractiveTitlebarTarget(target: EventTarget | null): boolean {

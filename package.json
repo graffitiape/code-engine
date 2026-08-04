@@ -1,9 +1,21 @@
 {
   "name": "code-engine",
+  "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
   "scripts": {
-    "dev": "cd packages/ui && pnpm dev",
-    "build": "cd packages/ui && pnpm build",
-    "tauri": "cd crates/ce-tauri && cargo tauri"
+    "dev": "pnpm --dir packages/ui dev",
+    "build": "pnpm --dir packages/ui build",
+    "typecheck": "pnpm --dir packages/ui typecheck",
+    "test": "pnpm --dir packages/ui test",
+    "check": "pnpm typecheck && pnpm test && pnpm build && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings",
+    "tauri": "cd crates/ce-tauri && tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
   }
 }

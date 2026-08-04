@@ -70,14 +70,22 @@ export function Breadcrumbs(props: BreadcrumbsProps) {
               )}
             </For>
           </Show>
-          <div class="right">
-            <span class="lsp">
-              <span class="pulse" />
-              {props.lspName ?? 'tsserver'}
-            </span>
-            <span style={{ color: 'var(--red)' }}>● {props.diagCounts.error}</span>
-            <span style={{ color: 'var(--yellow)' }}>▲ {props.diagCounts.warn}</span>
-          </div>
+          <Show when={props.lspName || props.diagCounts.error || props.diagCounts.warn}>
+            <div class="right">
+              <Show when={props.lspName}>
+                <span class="lsp">
+                  <span class="pulse" />
+                  {props.lspName}
+                </span>
+              </Show>
+              <Show when={props.diagCounts.error}>
+                <span style={{ color: 'var(--red)' }}>● {props.diagCounts.error}</span>
+              </Show>
+              <Show when={props.diagCounts.warn}>
+                <span style={{ color: 'var(--yellow)' }}>▲ {props.diagCounts.warn}</span>
+              </Show>
+            </div>
+          </Show>
         </div>
       )}
     </Show>

@@ -1,5 +1,12 @@
 target/
 node_modules/
 dist/
+packages/ui/dist/
+coverage/
+.code-engine/
+.env
+.env.*
+!.env.example
+*.log
 .DS_Store
 *.swp

@@ -138,9 +138,7 @@ fn zoom_window(window: &Window) -> Result<(), String> {
                     {
                         saved_frame.apply_to(current_rect)
                     } else {
-                        let Some(screen) = ns_window.screen() else {
-                            return None;
-                        };
+                        let screen = ns_window.screen()?;
                         let target_rect = screen.visibleFrame();
                         if StoredFrame::from_rect(current_rect)
                             .nearly_matches(StoredFrame::from_rect(target_rect))
@@ -171,7 +169,6 @@ fn zoom_window(window: &Window) -> Result<(), String> {
             let eased = 1.0 - (1.0 - progress).powi(3);
             let frame = start_frame.interpolate(target_frame, eased);
             let is_last_frame = frame_index == ANIMATION_FRAMES;
-            let ns_window = ns_window;
             let (tx, rx) = mpsc::channel();
 
             window
