@@ -118,6 +118,41 @@ const [agentState, setAgentState] = createStore<AgentState>({
 
 let bootstrapToken = 0;
 
+type CodexEventObserver = (event: CodexEventEnvelope) => void;
+type CodexRequestObserver = (request: CodexServerRequest) => void;
+type CodexStatusObserver = (status: CodexServerStatus) => void;
+
+const eventObservers = new Set<CodexEventObserver>();
+const requestObservers = new Set<CodexRequestObserver>();
+const statusObservers = new Set<CodexStatusObserver>();
+
+function notifyObservers<T>(observers: Set<(value: T) => void>, value: T) {
+  for (const observer of observers) {
+    try {
+      observer(value);
+    } catch (error) {
+      console.error("[CE] Codex observer failed", error);
+    }
+  }
+}
+
+/** Observe raw, current-generation Codex events before Agents-page filtering. */
+export function subscribeCodexEvents(observer: CodexEventObserver): () => void {
+  eventObservers.add(observer);
+  return () => eventObservers.delete(observer);
+}
+
+/** Observe requests from any Codex thread, including pipeline-owned threads. */
+export function subscribeCodexServerRequests(observer: CodexRequestObserver): () => void {
+  requestObservers.add(observer);
+  return () => requestObservers.delete(observer);
+}
+
+export function subscribeCodexStatus(observer: CodexStatusObserver): () => void {
+  statusObservers.add(observer);
+  return () => statusObservers.delete(observer);
+}
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -570,6 +605,7 @@ export function clearAgentError() {
 
 function handleCodexEvent(event: CodexEventEnvelope) {
   if (agentState.server && event.generation < agentState.server.generation) return;
+  notifyObservers(eventObservers, event);
   const params = asRecord(event.params);
   const threadId = fieldString(params, "threadId");
   const turnId = fieldString(params, "turnId");
@@ -691,15 +727,21 @@ function handleCodexEvent(event: CodexEventEnvelope) {
 
 function handleServerRequest(request: CodexServerRequest) {
   if (agentState.server && request.generation < agentState.server.generation) return;
+  notifyObservers(requestObservers, request);
   const threadId = fieldString(asRecord(request.params), "threadId");
   if (threadId && !threadBelongsToCurrentProject(threadId)) return;
   if (agentState.pendingRequests.some((entry) => entry.id === request.id)) return;
   setAgentState("pendingRequests", [...agentState.pendingRequests, request]);
 }
 
+let listenerConnection: Promise<UnlistenFn[]> | null = null;
+let listenerConsumers = 0;
+
 export async function connectAgentListeners(): Promise<() => void> {
-  const unlisteners: UnlistenFn[] = await Promise.all([
+  listenerConsumers += 1;
+  if (!listenerConnection) listenerConnection = Promise.all([
     listenCodexStatus((status) => {
+      notifyObservers(statusObservers, status);
       const previous = agentState.server;
       setAgentState("server", status);
       if (status.ready && (!previous?.ready || previous.generation !== status.generation) && agentState.cwd) {
@@ -712,7 +754,26 @@ export async function connectAgentListeners(): Promise<() => void> {
     listenCodexEvents(handleCodexEvent),
     listenCodexServerRequests(handleServerRequest),
   ]);
-  return () => unlisteners.forEach((unlisten) => unlisten());
+  try {
+    await listenerConnection;
+  } catch (error) {
+    listenerConsumers = Math.max(0, listenerConsumers - 1);
+    if (listenerConsumers === 0) listenerConnection = null;
+    throw error;
+  }
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    listenerConsumers = Math.max(0, listenerConsumers - 1);
+    if (listenerConsumers > 0) return;
+    const connection = listenerConnection;
+    listenerConnection = null;
+    void connection?.then((unlisteners) => {
+      for (const unlisten of unlisteners) unlisten();
+    });
+  };
 }
 
 export function useAgentState() {

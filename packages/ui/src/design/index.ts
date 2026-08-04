@@ -3,6 +3,8 @@
 export * from './types';
 export { Icons } from './icons';
 export { Icon, FileIcon } from './Icon';
+export { Select } from './forms/Select';
+export type { SelectOption, SelectProps } from './forms/Select';
 
 // Chrome
 export { TitleBar } from './chrome/TitleBar';

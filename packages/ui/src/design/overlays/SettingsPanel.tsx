@@ -1,5 +1,6 @@
 import { For, Match, Show, Switch, createSignal } from "solid-js";
 import { Icon } from "../Icon";
+import { Select } from "../forms/Select";
 import { updateSettings, useSettingsStore } from "../../stores/settings";
 
 export interface SettingsPanelProps {
@@ -161,15 +162,17 @@ export function SettingsPanel(props: SettingsPanelProps) {
                   />
                 </SettingRow>
                 <SettingRow label="Tab size">
-                  <select
+                  <Select
                     class="settings-select"
-                    value={settings.tab_size}
-                    onChange={(event) => updateSettings({ tab_size: Number(event.currentTarget.value) })}
-                  >
-                    <option value="2">2 spaces</option>
-                    <option value="4">4 spaces</option>
-                    <option value="8">8 spaces</option>
-                  </select>
+                    value={String(settings.tab_size)}
+                    options={[
+                      { value: "2", label: "2 spaces" },
+                      { value: "4", label: "4 spaces" },
+                      { value: "8", label: "8 spaces" },
+                    ]}
+                    onChange={(value) => updateSettings({ tab_size: Number(value) })}
+                    ariaLabel="Editor tab size"
+                  />
                 </SettingRow>
                 <SettingRow label="Word wrap" description="Wrap long lines at the editor viewport.">
                   <Toggle

@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, onCleanup, onMount } from "solid-js";
+import { Component, Show } from "solid-js";
 import { PageSwitcher, ProjectSwitcher } from "../design";
 import type { PageKey } from "../design";
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
@@ -11,9 +11,7 @@ import { AgentThreadView } from "../features/agents/AgentThreadView";
 import {
   archiveAgentThread,
   clearAgentError,
-  connectAgentListeners,
   createAgentTask,
-  initializeAgents,
   interruptAgentTurn,
   logoutAgentAccount,
   refreshAgents,
@@ -38,16 +36,6 @@ interface AgentsPageProps {
 const AgentsPage: Component<AgentsPageProps> = (props) => {
   const workspace = useWorkspace();
   const state = useAgentState();
-
-  onMount(() => {
-    let disconnect: (() => void) | undefined;
-    void connectAgentListeners().then((cleanup) => (disconnect = cleanup));
-    onCleanup(() => disconnect?.());
-  });
-
-  createEffect(() => {
-    void initializeAgents(workspace.activeRoot());
-  });
 
   const ready = () => {
     const root = workspace.activeRoot();

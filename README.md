@@ -10,6 +10,7 @@ Code Engine is a local desktop code editor with a first-class Codex task surface
 - Fuzzy-open files, search and replace across the project, inspect Git diffs, stage changes, commit, stash, and switch clean local branches.
 - Sign in with ChatGPT from **Agents**, choose a live Codex model and reasoning effort, stream turns, steer or interrupt work, and answer approvals or questions.
 - Choose a per-turn permission preset: read-only, workspace write, or full access.
+- Design project-specific, n8n-style **Pipelines** that connect multiple Codex agents into a validated acyclic workflow, then run the workflow with live stage status, approvals, retries, and a final handoff.
 
 ## Requirements
 
@@ -43,8 +44,11 @@ For browser-only UI work, use `pnpm dev`. Native file dialogs, filesystem access
 2. Use **Editor** for files, project search, source control, and settings.
 3. Open **Agents**, choose **Continue with ChatGPT**, and finish the hosted sign-in if Codex is not already authenticated.
 4. Select a model, reasoning effort, and permission preset before starting a task.
+5. Open **Pipelines** to arrange agents on the canvas, connect their ports, configure each stage, enter a development task, and run the complete workflow.
 
 Workspace mode disables network access and limits writes to the selected project. Read-only mode disables writes. Full access removes the sandbox and approval prompts; use it only for tasks you trust.
+
+Pipeline designs are saved locally per project. Read-only agents in the same stage can run concurrently; write-capable agents run exclusively so they do not edit the project at the same time. Switching projects or closing the app prompts you to stop an active pipeline safely.
 
 ## Keyboard shortcuts
 

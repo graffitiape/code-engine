@@ -376,6 +376,7 @@ export interface CodexFileChange {
 export interface CodexThreadItem {
   type: string;
   id: string;
+  phase?: string;
   text?: string;
   content?: CodexUserInput[] | string[];
   summary?: string[];
@@ -454,6 +455,7 @@ export interface CodexThreadStartParams {
   approvalPolicy: "untrusted" | "on-request" | "never";
   sandbox: "read-only" | "workspace-write" | "danger-full-access";
   sessionStartSource?: "startup" | "clear";
+  developerInstructions?: string;
 }
 
 export interface CodexThreadResumeParams {
@@ -465,6 +467,7 @@ export interface CodexTurnStartParams {
   threadId: string;
   input: CodexUserInput[];
   cwd: string;
+  clientUserMessageId?: string;
   model?: string | null;
   effort?: string | null;
   approvalPolicy?: "untrusted" | "on-request" | "never";

@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import type { CodexModel, CodexPermissionPreset } from "../../bridge/tauri";
-import { Icon } from "../../design";
+import { Icon, Select } from "../../design";
 import { PERMISSION_OPTIONS } from "./types";
 
 interface AgentComposerProps {
@@ -23,6 +23,20 @@ export function AgentComposer(props: AgentComposerProps) {
     props.models.find((model) => model.model === props.model),
   );
   const efforts = createMemo(() => selectedModel()?.supportedReasoningEfforts ?? []);
+  const modelOptions = createMemo(() =>
+    props.models.map((model) => ({
+      value: model.model,
+      label: model.displayName,
+      description: model.description,
+    })),
+  );
+  const effortOptions = createMemo(() =>
+    efforts().map((effort) => ({
+      value: effort.reasoningEffort,
+      label: effort.reasoningEffort,
+      description: effort.description,
+    })),
+  );
 
   const submit = () => {
     const value = prompt().trim();
@@ -59,25 +73,24 @@ export function AgentComposer(props: AgentComposerProps) {
         <div class="agent-composer-grid">
           <label>
             <span>Model</span>
-            <select value={props.model} onChange={(event) => props.onModel(event.currentTarget.value)}>
-              <For each={props.models}>
-                {(model) => <option value={model.model}>{model.displayName}</option>}
-              </For>
-            </select>
+            <Select
+              value={props.model}
+              options={modelOptions()}
+              onChange={props.onModel}
+              ariaLabel="Codex model"
+              placeholder="Choose a model"
+            />
           </label>
           <label>
             <span>Reasoning</span>
-            <select
+            <Select
               value={props.effort}
               disabled={!efforts().length}
-              onChange={(event) => props.onEffort(event.currentTarget.value)}
-            >
-              <For each={efforts()}>
-                {(effort) => (
-                  <option value={effort.reasoningEffort}>{effort.reasoningEffort}</option>
-                )}
-              </For>
-            </select>
+              options={effortOptions()}
+              onChange={props.onEffort}
+              ariaLabel="Reasoning effort"
+              placeholder="Default effort"
+            />
           </label>
         </div>
 
@@ -128,4 +141,3 @@ export function AgentComposer(props: AgentComposerProps) {
     </main>
   );
 }
-

@@ -6,7 +6,7 @@ import type {
   CodexThread,
   CodexThreadItem,
 } from "../../bridge/tauri";
-import { Icon } from "../../design";
+import { Icon, Select } from "../../design";
 import { AgentFeed } from "./AgentFeed";
 import { ServerRequestCard } from "./ServerRequestCard";
 import { PERMISSION_OPTIONS, asRecord, sourceLabel, threadStatusType, threadTitle } from "./types";
@@ -54,6 +54,21 @@ export function AgentThreadView(props: AgentThreadViewProps) {
   });
   const selectedModel = createMemo(() => props.models.find((model) => model.model === props.model));
   const efforts = createMemo(() => selectedModel()?.supportedReasoningEfforts ?? []);
+  const modelOptions = createMemo(() =>
+    props.models.map((model) => ({ value: model.model, label: model.displayName })),
+  );
+  const effortOptions = createMemo(() =>
+    efforts().map((effort) => ({
+      value: effort.reasoningEffort,
+      label: effort.reasoningEffort,
+      description: effort.description,
+    })),
+  );
+  const permissionOptions = PERMISSION_OPTIONS.map((option) => ({
+    value: option.id,
+    label: option.label,
+    description: option.description,
+  }));
   const visibleRequests = createMemo(() =>
     props.requests.filter((request) => {
       const requestThreadId = asRecord(request.params).threadId;
@@ -164,20 +179,33 @@ export function AgentThreadView(props: AgentThreadViewProps) {
           placeholder={props.active ? "Steer the active turn…" : "Ask Codex to continue…"}
         />
         <div class="agent-thread-controls">
-          <select disabled={props.loading} value={props.model} onChange={(event) => props.onModel(event.currentTarget.value)} title="Model">
-            <For each={props.models}>{(model) => <option value={model.model}>{model.displayName}</option>}</For>
-          </select>
-          <select disabled={props.loading} value={props.effort} onChange={(event) => props.onEffort(event.currentTarget.value)} title="Reasoning effort">
-            <For each={efforts()}>{(effort) => <option value={effort.reasoningEffort}>{effort.reasoningEffort}</option>}</For>
-          </select>
-          <select
+          <Select
+            compact
+            disabled={props.loading}
+            value={props.model}
+            options={modelOptions()}
+            onChange={props.onModel}
+            ariaLabel="Codex model"
+            title="Model"
+          />
+          <Select
+            compact
+            disabled={props.loading || !effortOptions().length}
+            value={props.effort}
+            options={effortOptions()}
+            onChange={props.onEffort}
+            ariaLabel="Reasoning effort"
+            title="Reasoning effort"
+          />
+          <Select
+            compact
             disabled={props.loading}
             value={props.permission}
-            onChange={(event) => props.onPermission(event.currentTarget.value as CodexPermissionPreset)}
+            options={permissionOptions}
+            onChange={(value) => props.onPermission(value as CodexPermissionPreset)}
+            ariaLabel="Task permissions"
             title="Permissions"
-          >
-            <For each={PERMISSION_OPTIONS}>{(option) => <option value={option.id}>{option.label}</option>}</For>
-          </select>
+          />
           <span class="agent-thread-controls-spacer" />
           <span class="agent-send-hint">Enter to {props.active ? "steer" : "send"}</span>
           <button class="agent-send-button" disabled={!draft().trim() || props.loading || props.submitting} onClick={send}>

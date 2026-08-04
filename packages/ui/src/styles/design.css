@@ -11,9 +11,9 @@
   --border-strong: #3b4261;
 
   --fg-0: #c0caf5;
-  --fg-1: #9aa5ce;
-  --fg-2: #737aa2;
-  --fg-3: #565f89;
+  --fg-1: #b6c0e6;
+  --fg-2: #a8b2d9;
+  --fg-3: #9aa5ce;
 
   --blue: #7aa2f7;
   --purple: #bb9af7;
@@ -106,6 +106,77 @@ html, body {
 button {
   background: none; border: none; color: inherit;
   font: inherit; cursor: pointer; padding: 0;
+}
+
+/* ==== Custom select (Solid-native, shadcn-style interaction) ==== */
+.ce-select { position: relative; min-width: 0; }
+.ce-select-trigger {
+  width: 100%; min-height: 34px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  text-align: left;
+  outline: none;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 3%, transparent);
+}
+.ce-select-trigger:hover:not(:disabled) { border-color: color-mix(in oklab, var(--accent) 48%, var(--border-strong)); }
+.ce-select-trigger:focus-visible, .ce-select.open .ce-select-trigger {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.ce-select-trigger:disabled { opacity: .5; cursor: not-allowed; }
+.ce-select-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ce-select-trigger .placeholder { color: var(--fg-3); }
+.ce-select-trigger svg { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--fg-2); stroke-width: 1.5; }
+.ce-select.open .ce-select-trigger svg { transform: rotate(180deg); }
+.ce-select.compact .ce-select-trigger { min-height: 28px; padding: 0 8px; border-radius: 6px; font-size: 11px; }
+.ce-select-content {
+  position: absolute; z-index: 320;
+  left: 0; top: calc(100% + 5px);
+  width: max(100%, 190px); max-width: min(360px, calc(100vw - 24px));
+  max-height: 280px; overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--bg-2) 97%, black);
+  box-shadow: 0 18px 46px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.03);
+  animation: ce-select-in .12s ease-out;
+}
+.ce-select-content.ce-select-portal {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  z-index: 1000;
+}
+.ce-select-content.ce-select-portal.drop-up {
+  right: auto;
+  bottom: auto;
+  transform-origin: bottom;
+}
+.ce-select-content.align-end { left: auto; right: 0; }
+.ce-select-content.drop-up { bottom: calc(100% + 5px); top: auto; transform-origin: bottom; }
+@keyframes ce-select-in { from { opacity: 0; transform: translateY(-3px) scale(.99); } }
+.ce-select-option {
+  width: 100%; min-height: 32px;
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  color: var(--fg-1);
+  text-align: left;
+  outline: none;
+}
+.ce-select-option.active, .ce-select-option:focus-visible { background: var(--bg-3); color: var(--fg-0); }
+.ce-select-option[aria-selected="true"] { color: var(--fg-0); }
+.ce-select-option:disabled { opacity: .4; cursor: not-allowed; }
+.ce-select-check { width: 13px; flex: none; color: var(--accent); font-size: 11px; font-weight: 700; }
+.ce-select-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.ce-select-copy strong { overflow: hidden; font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.ce-select-copy small { color: var(--fg-3); font-size: 10px; font-weight: 400; line-height: 1.35; white-space: normal; }
+@media (prefers-reduced-motion: reduce) {
+  .ce-select-content { animation: none; }
 }
 
 /* ==== Desktop backdrop ==== */
@@ -230,7 +301,7 @@ button {
   min-width: 0;
   border-radius: 6px;
 }
-.project-option:hover { background: var(--bg-3); }
+.project-option:hover, .project-option:focus-within { background: var(--bg-3); }
 .project-option.active { background: color-mix(in oklab, var(--accent) 12%, var(--bg-2)); }
 .project-option-main {
   display: flex;
@@ -240,6 +311,11 @@ button {
   min-width: 0;
   padding: 8px;
   text-align: left;
+}
+.project-option-main:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid color-mix(in oklab, var(--accent) 72%, transparent);
+  outline-offset: -2px;
 }
 .project-option-main:disabled { opacity: .55; cursor: wait; }
 .project-option-mark { width: 11px; color: var(--fg-3); font-size: 8px; text-align: center; }
@@ -254,8 +330,16 @@ button {
   color: var(--fg-3);
   opacity: 0;
 }
-.project-option:hover .project-option-remove { opacity: 1; }
-.project-option-remove:hover { background: var(--bg-4); color: var(--red); }
+.project-option:hover .project-option-remove,
+.project-option:focus-within .project-option-remove { opacity: 1; }
+.project-option-remove:hover, .project-option-remove:focus-visible {
+  background: var(--bg-4);
+  color: var(--red);
+}
+.project-option-remove:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--red) 72%, transparent);
+  outline-offset: -2px;
+}
 .project-menu-error {
   margin: 0 7px 6px;
   padding: 7px 8px;
@@ -277,7 +361,14 @@ button {
   color: var(--fg-1);
   text-align: left;
 }
-.project-menu-open:hover { background: var(--bg-3); color: var(--fg-0); }
+.project-menu-open:hover, .project-menu-open:focus-visible {
+  background: var(--bg-3);
+  color: var(--fg-0);
+}
+.project-menu-open:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 72%, transparent);
+  outline-offset: -2px;
+}
 .project-menu-open .kbd { margin-left: auto; color: var(--fg-3); font-size: 10px; }
 
 /* Empty-workspace welcome shown before any folder is opened */
@@ -1376,7 +1467,7 @@ button {
   display: flex; align-items: center; justify-content: space-between;
   cursor: pointer;
 }
-.settings-input, .settings-select {
+.settings-input, .settings-select .ce-select-trigger {
   min-width: 180px;
   padding: 6px 8px;
   border: 1px solid var(--border-strong);
@@ -1386,7 +1477,7 @@ button {
   color: var(--fg-0);
   font: 11.5px var(--font-mono);
 }
-.settings-input:focus, .settings-select:focus { border-color: var(--accent); }
+.settings-input:focus, .settings-select .ce-select-trigger:focus-visible { border-color: var(--accent); }
 .settings-input.wide { width: min(360px, 42vw); }
 .settings-range { width: 180px; accent-color: var(--accent); }
 .settings-note {

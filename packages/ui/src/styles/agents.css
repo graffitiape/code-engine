@@ -330,17 +330,8 @@
 .agent-composer-grid label,
 .agent-thread-controls { color: var(--fg-2); font-size: 10px; }
 .agent-composer-grid label > span { display: block; margin: 0 0 5px 2px; }
-.agent-composer-grid select,
-.agent-thread-controls select {
-  width: 100%;
-  height: 34px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  outline: 0;
-  background: var(--bg-3);
-  color: var(--fg-0);
-}
+.agent-composer-grid .ce-select { width: 100%; }
+.agent-composer-grid .ce-select-trigger { background: var(--bg-3); }
 
 .agent-permissions { margin-top: 16px; border: 0; }
 .agent-permissions legend { margin-bottom: 7px; color: var(--fg-2); font-size: 10px; }
@@ -523,7 +514,9 @@
 .agent-thread-composer { margin: 0 max(18px, calc((100% - 850px) / 2)) 14px; padding: 8px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-2); box-shadow: 0 12px 35px -28px #000; }
 .agent-thread-composer textarea { width: 100%; min-height: 54px; max-height: 160px; resize: vertical; padding: 6px; border: 0; outline: 0; background: transparent; color: var(--fg-0); font: 11.5px/1.5 var(--font-ui); }
 .agent-thread-controls { display: flex; align-items: center; gap: 6px; }
-.agent-thread-controls select { width: auto; max-width: 150px; height: 26px; padding: 0 6px; font-size: 9px; }
+.agent-thread-controls .ce-select { width: min(138px, 20vw); }
+.agent-thread-controls .ce-select-trigger { background: var(--bg-3); font-size: 9px; }
+.agent-thread-controls .ce-select-content { bottom: calc(100% + 5px); top: auto; }
 .agent-send-hint { color: var(--fg-3); font-size: 8.5px; }
 .agent-send-button { width: 28px; height: 28px; background: var(--accent); color: var(--bg-0); }
 .agent-send-button > span { width: 12px; height: 12px; }

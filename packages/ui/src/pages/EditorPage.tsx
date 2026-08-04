@@ -921,6 +921,13 @@ const EditorPage: Component<EditorPageProps> = (props) => {
                 run: () => props.onNavigatePage("agents"),
               },
               {
+                id: "view.pipelines",
+                label: "Open Pipelines",
+                detail: "Design and run multi-agent workflows",
+                icon: "branch",
+                run: () => props.onNavigatePage("pipelines"),
+              },
+              {
                 id: "settings.open",
                 label: "Open Settings",
                 shortcut: "⌘,",

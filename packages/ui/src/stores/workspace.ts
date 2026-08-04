@@ -75,6 +75,17 @@ const [filesVersion, setFilesVersion] = createSignal(0);
 const recents = () => projects().map((project) => project.path);
 
 let initializePromise: Promise<string | null> | null = null;
+type WorkspaceSwitchGuard = (
+  currentRoot: string,
+  nextRoot: string,
+) => boolean | Promise<boolean>;
+const workspaceSwitchGuards = new Set<WorkspaceSwitchGuard>();
+
+/** Register work that must be safely stopped before the active project changes. */
+export function registerWorkspaceSwitchGuard(guard: WorkspaceSwitchGuard): () => void {
+  workspaceSwitchGuards.add(guard);
+  return () => workspaceSwitchGuards.delete(guard);
+}
 
 function persistProjects(list: Project[]) {
   try {
@@ -102,7 +113,14 @@ function rememberProject(path: string) {
  * directory before frontend state changes, so stale recents cannot displace a
  * valid current project.
  */
-export async function setActiveRoot(path: string): Promise<void> {
+export async function setActiveRoot(path: string): Promise<boolean> {
+  const currentRoot = activeRoot();
+  if (currentRoot === path) return true;
+  if (currentRoot) {
+    for (const guard of workspaceSwitchGuards) {
+      if (!(await guard(currentRoot, path))) return false;
+    }
+  }
   setSwitching(true);
   setWorkspaceError(null);
   try {
@@ -114,6 +132,7 @@ export async function setActiveRoot(path: string): Promise<void> {
       // Persistence is best-effort; the active project still works this run.
     }
     rememberProject(canonicalPath);
+    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     setWorkspaceError(message);
@@ -148,7 +167,7 @@ export function initializeWorkspace(): Promise<string | null> {
 
     for (const candidate of candidates) {
       try {
-        await setActiveRoot(candidate);
+        if (!(await setActiveRoot(candidate))) continue;
         setInitialized(true);
         return candidate;
       } catch {
@@ -175,8 +194,7 @@ export async function chooseFolder(): Promise<string | null> {
 export async function pickFolder(): Promise<string | null> {
   const picked = await chooseFolder();
   if (!picked) return null;
-  await setActiveRoot(picked);
-  return picked;
+  return (await setActiveRoot(picked)) ? picked : null;
 }
 
 export function removeRecentProject(path: string) {
