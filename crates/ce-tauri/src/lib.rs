@@ -68,6 +68,7 @@ pub fn run() {
             commands::git::git_stage_all,
             commands::git::git_unstage_all,
             commands::git::git_commit,
+            commands::git::git_push,
             commands::git::git_stash,
             commands::git::git_recent_log,
             commands::git::git_branches,

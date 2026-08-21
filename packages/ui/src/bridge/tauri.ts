@@ -216,6 +216,10 @@ export async function gitCommit(path: string, message: string): Promise<GitLogEn
   return invoke("git_commit", { path, message });
 }
 
+export async function gitPush(path: string): Promise<string> {
+  return invoke("git_push", { path });
+}
+
 export async function gitStash(path: string, message?: string): Promise<GitStashResult> {
   return invoke("git_stash", { path, message });
 }

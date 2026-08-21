@@ -103,6 +103,14 @@ pub async fn git_commit(
 }
 
 #[tauri::command]
+pub async fn git_push(state: State<'_, AppState>, path: String) -> Result<String, String> {
+    with_active_repository(&state, &path, move |root| {
+        ce_git::push(root).map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn git_stash(
     state: State<'_, AppState>,
     path: String,
