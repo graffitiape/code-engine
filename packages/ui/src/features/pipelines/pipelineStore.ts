@@ -384,9 +384,7 @@ export function moveNode(nodeId: string, position: PipelinePoint) {
   replaceSelected((pipeline) => ({
     ...pipeline,
     nodes: pipeline.nodes.map((node) =>
-      node.id === nodeId && (node.type === "agent" || node.type === "integration" || node.type === "approval")
-        ? { ...node, position }
-        : node,
+      node.id === nodeId ? { ...node, position } : node,
     ),
   }));
 }

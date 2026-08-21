@@ -80,9 +80,7 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
   let cardRef: HTMLElement | undefined;
   let drag: NodeDrag | null = null;
 
-  const locked = () =>
-    (props.node.type !== "agent" && props.node.type !== "integration" && props.node.type !== "approval") ||
-    Boolean(props.readOnly);
+  const locked = () => Boolean(props.readOnly);
   const size = () => pipelineNodeSize(props.node);
   const tone = () => pipelineRunTone(props.runState?.status);
   const statusLabel = () => pipelineRunLabel(props.runState?.status);

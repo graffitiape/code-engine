@@ -82,7 +82,9 @@
 
 .pipeline-node-agent,
 .pipeline-node-integration,
-.pipeline-node-approval {
+.pipeline-node-approval,
+.pipeline-node-input,
+.pipeline-node-output {
   cursor: grab;
   touch-action: none;
 }
@@ -184,7 +186,9 @@
 }
 .pipeline-canvas-viewport.read-only .pipeline-node-agent,
 .pipeline-canvas-viewport.read-only .pipeline-node-integration,
-.pipeline-canvas-viewport.read-only .pipeline-node-approval { cursor: default; }
+.pipeline-canvas-viewport.read-only .pipeline-node-approval,
+.pipeline-canvas-viewport.read-only .pipeline-node-input,
+.pipeline-canvas-viewport.read-only .pipeline-node-output { cursor: default; }
 
 .pipeline-node-icon {
   width: 32px;

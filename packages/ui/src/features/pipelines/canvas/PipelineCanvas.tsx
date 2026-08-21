@@ -442,10 +442,6 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
         announce("Stop the active run before moving steps.", true);
         return;
       }
-      if (node.type !== "agent" && node.type !== "integration" && node.type !== "approval") {
-        announce(`${node.name} is locked and cannot be moved.`, true);
-        return;
-      }
       const step = event.shiftKey ? 10 : 1;
       const deltaX = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
       const deltaY = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
