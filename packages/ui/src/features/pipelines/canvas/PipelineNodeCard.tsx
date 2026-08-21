@@ -184,14 +184,19 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
       data-node-id={props.node.id}
       data-node-type={props.node.type}
       tabindex="0"
+      title={locked() ? `${nodeKindLabel(props.node)} position is locked` : "Drag to move step"}
       aria-label={ariaLabel()}
       aria-roledescription={locked() ? "locked pipeline node" : "draggable pipeline node"}
       style={cardStyle()}
       onPointerDown={(event) => {
-        if (!(event.target as Element).closest("button")) {
-          props.onSelect(props.node.id);
-          cardRef?.focus({ preventScroll: true });
-        }
+        if ((event.target as Element).closest("button, input, textarea, select, [contenteditable='true']")) return;
+        startDrag(event);
+      }}
+      onPointerMove={moveDrag}
+      onPointerUp={finishDrag}
+      onPointerCancel={cancelDrag}
+      onLostPointerCapture={() => {
+        if (drag) clearDrag();
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape" && drag) {
@@ -242,17 +247,7 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
         </button>
       </Show>
 
-      <header
-        class="pipeline-node-head"
-        title={locked() ? `${nodeKindLabel(props.node)} position is locked` : "Drag to move step"}
-        onPointerDown={startDrag}
-        onPointerMove={moveDrag}
-        onPointerUp={finishDrag}
-        onPointerCancel={cancelDrag}
-        onLostPointerCapture={() => {
-          if (drag) clearDrag();
-        }}
-      >
+      <header class="pipeline-node-head">
         <span class="pipeline-node-icon" aria-hidden="true">
           <Icon name={nodeIcon(props.node)} />
         </span>

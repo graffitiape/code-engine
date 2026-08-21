@@ -75,8 +75,16 @@
     inset 0 1px 0 color-mix(in oklab, white 5%, transparent),
     0 16px 34px -24px rgba(0, 0, 0, .75);
   color: var(--fg-0);
+  -webkit-user-select: none;
   user-select: none;
   transition: border-color .14s ease, box-shadow .14s ease, filter .14s ease;
+}
+
+.pipeline-node-agent,
+.pipeline-node-integration,
+.pipeline-node-approval {
+  cursor: grab;
+  touch-action: none;
 }
 
 .pipeline-node-card::before {
@@ -174,13 +182,9 @@
   align-items: center;
   gap: 9px;
 }
-.pipeline-node-agent .pipeline-node-head,
-.pipeline-node-integration .pipeline-node-head,
-.pipeline-node-approval .pipeline-node-head { cursor: grab; }
-.pipeline-node-card.dragging .pipeline-node-head { cursor: grabbing; }
-.pipeline-canvas-viewport.read-only .pipeline-node-agent .pipeline-node-head,
-.pipeline-canvas-viewport.read-only .pipeline-node-integration .pipeline-node-head,
-.pipeline-canvas-viewport.read-only .pipeline-node-approval .pipeline-node-head { cursor: default; }
+.pipeline-canvas-viewport.read-only .pipeline-node-agent,
+.pipeline-canvas-viewport.read-only .pipeline-node-integration,
+.pipeline-canvas-viewport.read-only .pipeline-node-approval { cursor: default; }
 
 .pipeline-node-icon {
   width: 32px;
