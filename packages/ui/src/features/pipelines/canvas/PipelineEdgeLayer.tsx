@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createUniqueId } from "solid-js";
 import type {
   PipelineEdge,
+  PipelineEdgeRunState,
   PipelineNode,
   PipelineNodeRunState,
   PipelinePoint,
@@ -20,6 +21,7 @@ export interface PipelineEdgeLayerProps {
   edges: readonly PipelineEdge[];
   positions: Readonly<Record<string, PipelinePoint | undefined>>;
   runStates: Readonly<Record<string, EdgeRunState | undefined>>;
+  edgeRunStates: Readonly<Record<string, PipelineEdgeRunState | undefined>>;
   viewport: PipelineViewport;
   selectedEdgeId: string | null;
   connectionSource: string | null;
@@ -37,7 +39,13 @@ interface EdgePoints {
 function edgeTone(
   edge: PipelineEdge,
   runStates: Readonly<Record<string, EdgeRunState | undefined>>,
+  edgeRunStates: Readonly<Record<string, PipelineEdgeRunState | undefined>>,
 ): PipelineRunTone {
+  const approvalStatus = edge.mode === "approval" ? edgeRunStates[edge.id]?.status : undefined;
+  if (approvalStatus === "waitingForApproval") return "attention";
+  if (approvalStatus === "approved") return "success";
+  if (approvalStatus === "rejected") return "failed";
+  if (approvalStatus === "cancelled" || approvalStatus === "skipped") return "cancelled";
   const source = pipelineRunTone(runStates[edge.source]?.status);
   const target = pipelineRunTone(runStates[edge.target]?.status);
   if (source === "failed" || target === "failed") return "failed";
@@ -140,27 +148,40 @@ export function PipelineEdgeLayer(props: PipelineEdgeLayerProps) {
         >
           <path d="M 0 0 L 10 5 L 0 10 z" />
         </marker>
+        <marker
+          id={`${markerPrefix}-approval`}
+          class="pipeline-edge-marker approval"
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="8"
+          markerHeight="8"
+          orient="auto-start-reverse"
+          markerUnits="userSpaceOnUse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" />
+        </marker>
       </defs>
 
       <For each={props.edges}>
         {(edge) => (
           <Show when={pointsFor(edge)}>
             {(points) => {
-              const tone = () => edgeTone(edge, props.runStates);
+              const tone = () => edgeTone(edge, props.runStates, props.edgeRunStates);
               const path = () => pipelineEdgePath(points().from, points().to);
               const selected = () => props.selectedEdgeId === edge.id;
               const label = () =>
-                `${points().source.name} to ${points().target.name}, ${edgeStatusLabel(tone())}`;
+                `${points().source.name} to ${points().target.name}, ${edge.mode === "approval" ? "approval connection" : "automatic connection"}, ${edgeStatusLabel(tone())}`;
               const midpoint = () => ({
                 x: (points().from.x + points().to.x) / 2,
                 y: (points().from.y + points().to.y) / 2,
               });
               return (
-                <g class={`pipeline-edge tone-${tone()} ${selected() ? "selected" : ""}`}>
+                <g class={`pipeline-edge mode-${edge.mode} tone-${tone()} ${selected() ? "selected" : ""}`}>
                   <path
                     class="pipeline-edge-visible"
                     d={path()}
-                    marker-end={`url(#${markerId(tone())})`}
+                    marker-end={`url(#${edge.mode === "approval" ? `${markerPrefix}-approval` : markerId(tone())})`}
                     aria-hidden="true"
                   />
                   <Show when={tone() === "active" || tone() === "attention"}>
@@ -190,6 +211,16 @@ export function PipelineEdgeLayer(props: PipelineEdgeLayerProps) {
                   >
                     <title>{label()}</title>
                   </path>
+                  <Show when={edge.mode === "approval"}>
+                    <g
+                      class={`pipeline-edge-gate tone-${tone()}`}
+                      transform={`translate(${midpoint().x}, ${midpoint().y})`}
+                      aria-hidden="true"
+                    >
+                      <rect x="-15" y="-7" width="30" height="14" rx="5" />
+                      <text text-anchor="middle" dominant-baseline="central">GATE</text>
+                    </g>
+                  </Show>
                   <Show when={(outgoingCounts().get(edge.source) ?? 0) > 1}>
                     <text
                       class="pipeline-edge-order"

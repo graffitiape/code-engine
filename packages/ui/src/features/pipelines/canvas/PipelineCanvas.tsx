@@ -1,5 +1,6 @@
 import {
   For,
+  Show,
   createEffect,
   createMemo,
   createSignal,
@@ -7,7 +8,9 @@ import {
 } from "solid-js";
 import type { JSX } from "solid-js";
 import type {
+  PipelineConnectionMode,
   PipelineEdge,
+  PipelineEdgeRunState,
   PipelineNode,
   PipelineNodeRunState,
   PipelinePoint,
@@ -38,13 +41,14 @@ export interface PipelineCanvasProps {
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   runStates: Readonly<Record<string, PipelineCanvasRunState | undefined>>;
+  edgeRunStates: Readonly<Record<string, PipelineEdgeRunState | undefined>>;
   viewport: PipelineViewport;
   connectionSource: string | null;
   readOnly?: boolean;
   onSelectNode: (nodeId: string | null) => void;
   onSelectEdge: (edgeId: string | null) => void;
   onMoveCommit: (nodeId: string, position: PipelinePoint) => void;
-  onConnect: (source: string, target: string) => boolean;
+  onConnect: (source: string, target: string, mode: PipelineConnectionMode) => boolean;
   onDeleteNode: (nodeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
   onViewportChange: (viewport: PipelineViewport) => void;
@@ -64,6 +68,13 @@ interface CanvasPan {
   clientX: number;
   clientY: number;
   viewport: PipelineViewport;
+}
+
+interface ConnectionChoice {
+  sourceId: string;
+  targetId: string;
+  left: number;
+  top: number;
 }
 
 const GRID_SIZE = 28;
@@ -92,6 +103,7 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
   const [previewTarget, setPreviewTarget] = createSignal<PipelinePoint | null>(null);
   const [announcement, setAnnouncement] = createSignal("");
   const [panning, setPanning] = createSignal(false);
+  const [connectionChoice, setConnectionChoice] = createSignal<ConnectionChoice | null>(null);
   let viewportRef: HTMLDivElement | undefined;
   let pan: CanvasPan | null = null;
   let observedConnectionSource: string | null = null;
@@ -172,6 +184,7 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
       announce("Stop the active run before changing connections.", true);
       return;
     }
+    setConnectionChoice(null);
     const node = nodeMap().get(nodeId);
     if (!node || node.type === "output") {
       announce("Only Task Input and Codex Agent nodes can start a connection.", true);
@@ -208,7 +221,7 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
       return;
     }
     if (source.type === "input" && target.type === "output") {
-      announce("Task input must pass through at least one agent before the result.", true);
+      announce("Task input must pass through at least one executable step before the result.", true);
       return;
     }
     if (
@@ -222,12 +235,29 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
       return;
     }
 
-    if (!props.onConnect(sourceId, targetId)) {
-      announce(`Could not connect ${source.name} to ${target.name}.`);
+    const targetPoint = pointInViewport(pipelinePortPoint(target, "input"), props.viewport);
+    const rect = viewportRef?.getBoundingClientRect();
+    setConnectionChoice({
+      sourceId,
+      targetId,
+      left: Math.max(12, Math.min(targetPoint.x + 12, (rect?.width ?? 600) - 284)),
+      top: Math.max(12, Math.min(targetPoint.y - 54, (rect?.height ?? 500) - 174)),
+    });
+    setConnectionSource(null);
+    announce(`Choose a connection type from ${source.name} to ${target.name}.`);
+  };
+
+  const chooseConnectionType = (mode: PipelineConnectionMode) => {
+    const choice = connectionChoice();
+    if (!choice) return;
+    const source = nodeMap().get(choice.sourceId);
+    const target = nodeMap().get(choice.targetId);
+    if (!source || !target || !props.onConnect(choice.sourceId, choice.targetId, mode)) {
+      announce("Could not create that connection.", true);
       return;
     }
-    setConnectionSource(null);
-    announce(`Connected ${source.name} to ${target.name}.`);
+    setConnectionChoice(null);
+    announce(`${mode === "approval" ? "Approval" : "Automatic"} connection created from ${source.name} to ${target.name}.`);
   };
 
   const restoreCanvasFocus = () => {
@@ -250,7 +280,7 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
     if (!nodeId) return;
     const node = nodeMap().get(nodeId);
     if (!node) return;
-    if (node.type !== "agent") {
+    if (node.type !== "agent" && node.type !== "integration" && node.type !== "approval") {
       announce(`${node.name} is required by the pipeline and cannot be deleted.`, true);
       return;
     }
@@ -276,6 +306,10 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
   const startPan = (event: PointerEvent) => {
     if ((event.button !== 0 && event.button !== 1) || isCanvasControl(event.target)) return;
     event.preventDefault();
+    if (connectionChoice()) {
+      setConnectionChoice(null);
+      announce("Connection cancelled.");
+    }
     clearSelection();
     if (props.connectionSource && event.button === 0) {
       setConnectionSource(null);
@@ -355,6 +389,11 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
+      if (connectionChoice()) {
+        event.preventDefault();
+        setConnectionChoice(null);
+        announce("Connection cancelled.");
+      }
       if (props.connectionSource) {
         event.preventDefault();
         setConnectionSource(null);
@@ -400,10 +439,10 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
         return;
       }
       if (props.readOnly) {
-        announce("Stop the active run before moving agents.", true);
+        announce("Stop the active run before moving steps.", true);
         return;
       }
-      if (node.type !== "agent") {
+      if (node.type !== "agent" && node.type !== "integration" && node.type !== "approval") {
         announce(`${node.name} is locked and cannot be moved.`, true);
         return;
       }
@@ -429,6 +468,7 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
   createEffect(() => {
     if (!props.readOnly) return;
     setDragPreview(null);
+    setConnectionChoice(null);
     if (props.connectionSource) {
       setConnectionSource(null);
       announce("Connection cancelled because the pipeline run started.");
@@ -482,6 +522,7 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
           edges={props.edges}
           positions={previewPositions()}
           runStates={props.runStates}
+          edgeRunStates={props.edgeRunStates}
           viewport={{ ...props.viewport, zoom: zoom() }}
           selectedEdgeId={props.selectedEdgeId}
           connectionSource={props.connectionSource}
@@ -513,6 +554,35 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
             )}
           </For>
         </div>
+
+        <Show when={connectionChoice()}>
+          {(choice) => {
+            const source = () => nodeMap().get(choice().sourceId);
+            const target = () => nodeMap().get(choice().targetId);
+            return (
+              <section
+                class="pipeline-connection-type-menu"
+                role="dialog"
+                aria-label="Choose connection type"
+                style={{ left: `${choice().left}px`, top: `${choice().top}px` }}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <header>
+                  <span>CONNECTION TYPE</span>
+                  <strong>{source()?.name} → {target()?.name}</strong>
+                </header>
+                <button type="button" onClick={() => chooseConnectionType("automatic")}>
+                  <span class="pipeline-connection-choice-mark automatic" aria-hidden="true">→</span>
+                  <span><strong>Automatic handoff</strong><small>Continue as soon as inputs are ready</small></span>
+                </button>
+                <button type="button" onClick={() => chooseConnectionType("approval")}>
+                  <span class="pipeline-connection-choice-mark approval" aria-hidden="true">!</span>
+                  <span><strong>Require approval</strong><small>Pause before the next step starts</small></span>
+                </button>
+              </section>
+            );
+          }}
+        </Show>
 
         <div class="pipeline-canvas-toolbar" role="toolbar" aria-label="Canvas zoom controls">
           <button
@@ -555,9 +625,9 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
       </div>
 
       <p id={instructionsId} class="pipeline-sr-only">
-        Use Tab to focus nodes and ports. Arrow keys pan when the canvas is focused and move an agent
+        Use Tab to focus nodes and ports. Arrow keys pan when the canvas is focused and move a step
         when its card is focused. Alt plus an arrow pans from a focused node. Activate an output port,
-        then an input port, to connect nodes. Delete removes the selected agent or connection. Escape
+        then an input port, to connect nodes. Delete removes the selected step or connection. Escape
         cancels a connection.
       </p>
       <div class="pipeline-sr-only" role="status" aria-live="polite" aria-atomic="true">

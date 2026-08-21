@@ -14,11 +14,11 @@ interface PipelineRailProps {
 
 export function PipelineRail(props: PipelineRailProps) {
   return (
-    <aside class="pipeline-rail" aria-label="Saved pipelines">
+    <aside class="pipeline-rail" aria-label="Pipeline templates">
       <header class="pipeline-rail-head">
         <div>
-          <span class="pipeline-eyebrow">WORKFLOWS</span>
-          <strong>Pipelines</strong>
+          <span class="pipeline-eyebrow">REUSABLE</span>
+          <strong>Templates</strong>
         </div>
         <button
           type="button"
@@ -35,7 +35,9 @@ export function PipelineRail(props: PipelineRailProps) {
       <div class="pipeline-rail-list">
         <For each={props.pipelines}>
           {(pipeline, index) => {
-            const agentCount = () => pipeline.nodes.filter((node) => node.type === "agent").length;
+            const stepCount = () => pipeline.nodes.filter(
+              (node) => node.type === "agent" || node.type === "integration" || node.type === "approval",
+            ).length;
             return (
               <button
                 type="button"
@@ -47,7 +49,7 @@ export function PipelineRail(props: PipelineRailProps) {
                 <span class="pipeline-rail-number">{String(index() + 1).padStart(2, "0")}</span>
                 <span class="pipeline-rail-copy">
                   <strong>{pipeline.name}</strong>
-                  <small>{agentCount()} {agentCount() === 1 ? "agent" : "agents"} · {pipeline.edges.length} wires</small>
+                  <small>{stepCount()} {stepCount() === 1 ? "step" : "steps"} · {pipeline.edges.length} wires</small>
                 </span>
                 <span class="pipeline-rail-led" aria-hidden="true" />
               </button>

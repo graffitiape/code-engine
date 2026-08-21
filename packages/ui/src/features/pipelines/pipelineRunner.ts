@@ -1,11 +1,17 @@
 import { useAgentState } from "../agents/agentStore";
+import { gitCommit, gitPush, gitStageAll, gitStatus } from "../../bridge/tauri";
 import { buildTopologicalLayers, orderedIncomingEdges, validatePipelineGraph } from "./graph";
 import { composePipelinePrompt } from "./prompt";
 import { executePipelineAgent, PipelineTurnCleanupError } from "./codexRuntime";
 import { newPipelineId } from "./pipelinePersistence";
 import type {
   PipelineAgentNode,
+  PipelineApprovalDecision,
+  PipelineApprovalNode,
   PipelineDefinition,
+  PipelineEdge,
+  PipelineEdgeRunState,
+  PipelineIntegrationNode,
   PipelineNode,
   PipelineNodeRunState,
   PipelineRun,
@@ -14,10 +20,12 @@ import type {
 } from "./types";
 
 export type PipelineNodeRunPatch = Partial<Omit<PipelineNodeRunState, "nodeId">>;
+export type PipelineEdgeRunPatch = Partial<Omit<PipelineEdgeRunState, "edgeId">>;
 
 export interface PipelineRunnerCallbacks {
   onRunStatus: (status: PipelineRunStatus, error?: string | null, output?: string | null) => void;
   onNodePatch: (nodeId: string, patch: PipelineNodeRunPatch) => void;
+  onEdgePatch: (edgeId: string, patch: PipelineEdgeRunPatch) => void;
   onThreadOwned: (threadId: string, nodeId: string) => void;
   onTurnOwned: (threadId: string, turnId: string, nodeId: string) => void;
   onAttemptSettled: (threadId: string | null, turnId: string | null, nodeId: string) => void;
@@ -29,6 +37,12 @@ export interface PipelineRunnerOptions {
   abortPeers: (reason: unknown) => void;
   fallbackModel: string;
   fallbackEffort: string;
+  requestApproval?: (node: PipelineApprovalNode) => Promise<PipelineApprovalDecision>;
+  requestConnectionApproval?: (
+    edge: PipelineEdge,
+    source: PipelineNode,
+    target: PipelineNode,
+  ) => Promise<PipelineApprovalDecision>;
   callbacks: PipelineRunnerCallbacks;
 }
 
@@ -51,27 +65,110 @@ function initialNodeState(nodeId: string): PipelineNodeRunState {
   };
 }
 
+function initialEdgeState(edgeId: string): PipelineEdgeRunState {
+  return {
+    edgeId,
+    status: "pending",
+    startedAt: null,
+    completedAt: null,
+    error: null,
+  };
+}
+
 export function createPipelineRun(
   definition: PipelineDefinition,
   cwd: string,
   input: string,
+  taskId: string | null = null,
 ): PipelineRun {
   const now = Date.now();
   const snapshot = cloneDefinition(definition);
   return {
     id: newPipelineId("run"),
     pipelineId: definition.id,
+    taskId,
     cwd,
     input,
     definition: snapshot,
     status: "queued",
     nodes: Object.fromEntries(snapshot.nodes.map((node) => [node.id, initialNodeState(node.id)])),
+    edges: Object.fromEntries(
+      snapshot.edges
+        .filter((edge) => edge.mode === "approval")
+        .map((edge) => [edge.id, initialEdgeState(edge.id)]),
+    ),
     createdAt: now,
     updatedAt: now,
     completedAt: null,
     output: null,
     error: null,
   };
+}
+
+function commitMessageFor(node: PipelineIntegrationNode, task: string): string {
+  const taskSubject = task
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^#+\s*/, "").trim())
+    .find(Boolean) ?? "pipeline task";
+  const message = node.commitMessage.replaceAll("{{task}}", taskSubject).trim();
+  const [subject, ...body] = message.split(/\r?\n/);
+  const cleanSubject = subject.trim().slice(0, 72);
+  return [cleanSubject, ...body].join("\n").trim();
+}
+
+async function runIntegration(
+  run: PipelineRun,
+  node: PipelineIntegrationNode,
+  outputs: Map<string, string>,
+  options: PipelineRunnerOptions,
+): Promise<void> {
+  if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
+  options.callbacks.onNodePatch(node.id, {
+    status: "running",
+    attempt: 1,
+    startedAt: Date.now(),
+    completedAt: null,
+    output: null,
+    error: null,
+  });
+  try {
+    if (node.provider !== "git") throw new Error(`Unsupported integration: ${node.provider}`);
+    let status = node.stageAll ? await gitStageAll(run.cwd) : await gitStatus(run.cwd);
+    if (!status.staged.length) {
+      throw new Error(node.stageAll
+        ? "There are no project changes to commit."
+        : "There are no staged changes to commit.");
+    }
+    const commit = await gitCommit(run.cwd, commitMessageFor(node, run.input));
+    let output = `Committed ${commit.shortId}: ${commit.summary}`;
+    if (node.action === "commit-push") {
+      const branch = await gitPush(run.cwd);
+      output += `\nPushed ${branch} to its configured upstream.`;
+    }
+    status = await gitStatus(run.cwd);
+    output += `\nWorking tree: ${status.staged.length + status.unstaged.length + status.untracked.length} pending change(s).`;
+    outputs.set(node.id, output);
+    options.callbacks.onNodePatch(node.id, {
+      status: "completed",
+      output,
+      completedAt: Date.now(),
+    });
+  } catch (error) {
+    if (isAbort(error, options.signal)) {
+      options.callbacks.onNodePatch(node.id, {
+        status: "cancelled",
+        error: "Stopped",
+        completedAt: Date.now(),
+      });
+      throw error;
+    }
+    options.callbacks.onNodePatch(node.id, {
+      status: "failed",
+      error: messageOf(error),
+      completedAt: Date.now(),
+    });
+    throw error;
+  }
 }
 
 function messageOf(error: unknown): string {
@@ -206,6 +303,118 @@ async function runAgent(
   }
 }
 
+async function runApproval(
+  run: PipelineRun,
+  node: PipelineApprovalNode,
+  outputs: Map<string, string>,
+  options: PipelineRunnerOptions,
+): Promise<void> {
+  if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
+  const requestApproval = options.requestApproval;
+  options.callbacks.onNodePatch(node.id, {
+    status: "waitingForApproval",
+    attempt: 1,
+    startedAt: Date.now(),
+    completedAt: null,
+    output: node.message,
+    error: null,
+  });
+  options.callbacks.onRunStatus("needsAttention");
+  let rejectionRecorded = false;
+  try {
+    if (!requestApproval) throw new Error("This pipeline runner cannot request human approval.");
+    const decision = await requestApproval(node);
+    if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
+    if (decision === "rejected") {
+      const message = `Approval rejected at ${node.name}.`;
+      options.callbacks.onNodePatch(node.id, {
+        status: "failed",
+        error: message,
+        completedAt: Date.now(),
+      });
+      rejectionRecorded = true;
+      throw new Error(message);
+    }
+    outputs.set(node.id, outputForJoin(run.definition, node.id, outputs));
+    options.callbacks.onNodePatch(node.id, {
+      status: "completed",
+      output: `Approved: ${node.message}`,
+      error: null,
+      completedAt: Date.now(),
+    });
+    options.callbacks.onRunStatus("running");
+  } catch (error) {
+    if (isAbort(error, options.signal)) {
+      options.callbacks.onNodePatch(node.id, {
+        status: "cancelled",
+        error: "Stopped",
+        completedAt: Date.now(),
+      });
+    } else if (!rejectionRecorded) {
+      options.callbacks.onNodePatch(node.id, {
+        status: "failed",
+        error: messageOf(error),
+        completedAt: Date.now(),
+      });
+    }
+    throw error;
+  }
+}
+
+async function runApprovalConnection(
+  edge: PipelineEdge,
+  source: PipelineNode,
+  target: PipelineNode,
+  options: PipelineRunnerOptions,
+): Promise<void> {
+  if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
+  const requestApproval = options.requestConnectionApproval;
+  options.callbacks.onEdgePatch(edge.id, {
+    status: "waitingForApproval",
+    startedAt: Date.now(),
+    completedAt: null,
+    error: null,
+  });
+  options.callbacks.onRunStatus("needsAttention");
+  let rejectionRecorded = false;
+  try {
+    if (!requestApproval) throw new Error("This pipeline runner cannot request connection approval.");
+    const decision = await requestApproval(edge, source, target);
+    if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
+    if (decision === "rejected") {
+      const message = `Approval rejected between ${source.name} and ${target.name}.`;
+      options.callbacks.onEdgePatch(edge.id, {
+        status: "rejected",
+        error: message,
+        completedAt: Date.now(),
+      });
+      rejectionRecorded = true;
+      throw new Error(message);
+    }
+    options.callbacks.onEdgePatch(edge.id, {
+      status: "approved",
+      error: null,
+      completedAt: Date.now(),
+    });
+    options.callbacks.onRunStatus("running");
+  } catch (error) {
+    if (isAbort(error, options.signal)) {
+      options.callbacks.onEdgePatch(edge.id, {
+        status: "cancelled",
+        error: "Stopped",
+        completedAt: Date.now(),
+      });
+    } else if (!rejectionRecorded) {
+      options.callbacks.onEdgePatch(edge.id, {
+        status: "rejected",
+        error: messageOf(error),
+        completedAt: Date.now(),
+      });
+    }
+    throw error;
+  }
+}
+
 async function runExclusiveLayer(
   run: PipelineRun,
   nodes: PipelineAgentNode[],
@@ -259,9 +468,27 @@ export async function executePipelineRun(
 
   for (const layer of layers) {
     const layerNodes = layer.map((id) => nodes.get(id)!).filter(Boolean);
+    const approvalConnections = layerNodes.flatMap((node) =>
+      orderedIncomingEdges(run.definition, node.id).filter((edge) => edge.mode === "approval")
+    );
     const agents = layerNodes.filter((node): node is PipelineAgentNode => node.type === "agent");
+    const integrations = layerNodes.filter(
+      (node): node is PipelineIntegrationNode => node.type === "integration",
+    );
+    const approvals = layerNodes.filter(
+      (node): node is PipelineApprovalNode => node.type === "approval",
+    );
+    for (const edge of approvalConnections) {
+      const source = nodes.get(edge.source);
+      const target = nodes.get(edge.target);
+      if (source && target) await runApprovalConnection(edge, source, target, options);
+    }
     for (const agent of agents) callbacks.onNodePatch(agent.id, { status: "ready" });
+    for (const integration of integrations) callbacks.onNodePatch(integration.id, { status: "ready" });
+    for (const approval of approvals) callbacks.onNodePatch(approval.id, { status: "ready" });
     await runExclusiveLayer(run, agents, outputs, options);
+    for (const integration of integrations) await runIntegration(run, integration, outputs, options);
+    for (const approval of approvals) await runApproval(run, approval, outputs, options);
     for (const outputNode of layerNodes.filter((node) => node.type === "output")) {
       const output = outputForJoin(run.definition, outputNode.id, outputs);
       outputs.set(outputNode.id, output);

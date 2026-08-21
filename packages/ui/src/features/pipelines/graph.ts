@@ -162,7 +162,7 @@ export function validatePipelineConnection(
       valid: false,
       issue: issue(
         "invalid_connection",
-        "Task input must pass through at least one agent before reaching the result.",
+        "Task input must pass through at least one agent, approval, or integration step before reaching the result.",
       ),
     };
   }
@@ -199,7 +199,7 @@ export function orderedIncomingEdges(
 export function validatePipelineGraph(graph: PipelineDefinition): PipelineGraphValidation {
   const issues: PipelineGraphIssue[] = [];
   if (graph.schemaVersion !== PIPELINE_SCHEMA_VERSION) {
-    issues.push(issue("unsupported_schema", "Only pipeline schema version 1 is supported."));
+    issues.push(issue("unsupported_schema", `Only pipeline schema version ${PIPELINE_SCHEMA_VERSION} is supported.`));
   }
   if (
     !isNonEmpty(graph.id) ||
@@ -248,16 +248,42 @@ export function validatePipelineGraph(graph: PipelineDefinition): PipelineGraphV
         ));
       }
     }
+    if (node.type === "integration") {
+      if (
+        node.provider !== "git" ||
+        (node.action !== "commit" && node.action !== "commit-push") ||
+        typeof node.stageAll !== "boolean" ||
+        !isNonEmpty(node.commitMessage) ||
+        !isNonEmpty(node.color)
+      ) {
+        issues.push(issue(
+          "invalid_integration",
+          "Git steps require an action, a commit message, and staging behavior.",
+          { nodeId: node.id },
+        ));
+      }
+    }
+    if (node.type === "approval") {
+      if (!isNonEmpty(node.message) || !isNonEmpty(node.color)) {
+        issues.push(issue(
+          "invalid_approval",
+          "Approval gates require a message and color.",
+          { nodeId: node.id },
+        ));
+      }
+    }
   }
 
   const inputs = graph.nodes.filter((node) => node.type === "input");
-  const agents = graph.nodes.filter((node) => node.type === "agent");
+  const executableSteps = graph.nodes.filter(
+    (node) => node.type === "agent" || node.type === "integration" || node.type === "approval",
+  );
   const outputs = graph.nodes.filter((node) => node.type === "output");
   if (inputs.length !== 1) {
     issues.push(issue("input_count", "A pipeline must contain exactly one task input node."));
   }
-  if (agents.length < 1) {
-    issues.push(issue("agent_count", "A pipeline must contain at least one agent node."));
+  if (executableSteps.length < 1) {
+    issues.push(issue("agent_count", "A pipeline must contain at least one agent, approval, or integration step."));
   }
   if (outputs.length !== 1) {
     issues.push(issue("output_count", "A pipeline must contain exactly one result node."));
@@ -271,6 +297,16 @@ export function validatePipelineGraph(graph: PipelineDefinition): PipelineGraphV
       issues.push(issue("invalid_edge", "Every edge needs an id and non-negative integer order.", {
         edgeId: edge.id,
       }));
+    }
+    if (
+      (edge.mode !== "automatic" && edge.mode !== "approval") ||
+      (edge.mode === "approval" && !isNonEmpty(edge.approvalMessage))
+    ) {
+      issues.push(issue(
+        "invalid_approval_connection",
+        "Approval connections require reviewer guidance.",
+        { edgeId: edge.id },
+      ));
     }
     if (seenEdgeIds.has(edge.id)) {
       issues.push(issue("duplicate_edge_id", `Edge id "${edge.id}" is duplicated.`, {

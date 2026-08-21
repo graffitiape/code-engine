@@ -31,7 +31,7 @@ function agent(id: string, name = id): PipelineAgentNode {
 }
 
 function edge(id: string, source: string, target: string, order = 0): PipelineEdge {
-  return { id, source, target, order };
+  return { id, source, target, order, mode: "automatic", approvalMessage: "" };
 }
 
 function graph(nodes: PipelineNode[], edges: PipelineEdge[]): PipelineDefinition {
@@ -111,6 +111,62 @@ describe("pipeline graph validation", () => {
     alpha.retryCount = 4;
     alpha.color = "";
     expect(codes(invalidAgent)).toContain("invalid_agent");
+  });
+
+  it("accepts a Git integration as an executable pipeline step", () => {
+    const definition = graph(
+      [
+        { id: "task", type: "input", name: "Task", position: { x: 0, y: 0 } },
+        {
+          id: "git",
+          type: "integration",
+          name: "Commit & push",
+          position: { x: 100, y: 0 },
+          provider: "git",
+          action: "commit-push",
+          stageAll: true,
+          commitMessage: "feat: {{task}}",
+          color: "orange",
+        },
+        { id: "result", type: "output", name: "Result", position: { x: 200, y: 0 } },
+      ],
+      [edge("one", "task", "git"), edge("two", "git", "result")],
+    );
+    expect(validatePipelineGraph(definition)).toMatchObject({ valid: true, issues: [] });
+  });
+
+  it("accepts a configured approval gate and rejects an empty approval message", () => {
+    const approval = {
+      id: "approval",
+      type: "approval" as const,
+      name: "Release approval",
+      position: { x: 100, y: 0 },
+      message: "Review the work before continuing.",
+      color: "orange",
+    };
+    const definition = graph(
+      [
+        { id: "task", type: "input", name: "Task", position: { x: 0, y: 0 } },
+        approval,
+        { id: "result", type: "output", name: "Result", position: { x: 200, y: 0 } },
+      ],
+      [edge("one", "task", "approval"), edge("two", "approval", "result")],
+    );
+    expect(validatePipelineGraph(definition)).toMatchObject({ valid: true, issues: [] });
+
+    approval.message = "";
+    expect(codes(definition)).toContain("invalid_approval");
+  });
+
+  it("validates approval-mode connections", () => {
+    const definition = diamond();
+    const approval = definition.edges.find((entry) => entry.id === "alpha-result")!;
+    approval.mode = "approval";
+    approval.approvalMessage = "Approve Alpha before collecting the result.";
+    expect(validatePipelineGraph(definition)).toMatchObject({ valid: true, issues: [] });
+
+    approval.approvalMessage = "";
+    expect(codes(definition)).toContain("invalid_approval_connection");
   });
 
   it("rejects duplicate ids, missing endpoints, self edges, and duplicate connections", () => {

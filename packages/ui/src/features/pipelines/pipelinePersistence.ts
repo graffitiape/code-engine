@@ -2,9 +2,11 @@ import {
   PIPELINE_MAX_EDGES,
   PIPELINE_MAX_NODES,
   PIPELINE_SCHEMA_VERSION,
+  type PipelineApprovalNode,
   type PipelineAgentNode,
   type PipelineDefinition,
   type PipelineEdge,
+  type PipelineIntegrationAction,
   type PipelineNode,
   type PipelinePermission,
   type PipelinePoint,
@@ -96,6 +98,8 @@ export function createStarterPipeline(
     source: node.id,
     target: nodes[index + 1].id,
     order: index,
+    mode: "automatic",
+    approvalMessage: "",
   }));
   return {
     schemaVersion: PIPELINE_SCHEMA_VERSION,
@@ -140,6 +144,10 @@ function isPermission(value: unknown): value is PipelinePermission {
   return value === "read-only" || value === "workspace-write" || value === "full-access";
 }
 
+function isIntegrationAction(value: unknown): value is PipelineIntegrationAction {
+  return value === "commit" || value === "commit-push";
+}
+
 function parseNode(value: unknown): PipelineNode | null {
   if (!value || typeof value !== "object") return null;
   const node = value as Record<string, unknown>;
@@ -147,6 +155,37 @@ function parseNode(value: unknown): PipelineNode | null {
   if (typeof node.id !== "string" || typeof node.name !== "string" || !position) return null;
   if (node.type === "input" || node.type === "output") {
     return { id: node.id, type: node.type, name: node.name, position };
+  }
+  if (node.type === "integration") {
+    if (
+      (node.provider !== "git" && node.provider !== "github") ||
+      !isIntegrationAction(node.action) ||
+      typeof node.stageAll !== "boolean" ||
+      typeof node.commitMessage !== "string"
+    ) return null;
+    return {
+      id: node.id,
+      type: "integration",
+      name: node.name,
+      position,
+      provider: "git",
+      action: node.action,
+      stageAll: node.stageAll,
+      commitMessage: node.commitMessage,
+      color: typeof node.color === "string" && node.color ? node.color : "orange",
+    };
+  }
+  if (node.type === "approval") {
+    if (typeof node.message !== "string") return null;
+    const approval: PipelineApprovalNode = {
+      id: node.id,
+      type: "approval",
+      name: node.name,
+      position,
+      message: node.message,
+      color: typeof node.color === "string" && node.color ? node.color : "orange",
+    };
+    return approval;
   }
   if (
     node.type !== "agent" ||
@@ -184,13 +223,55 @@ function parseDefinition(value: unknown): PipelineDefinition | null {
   const viewport = item.viewport as Record<string, unknown> | undefined;
   const nodes = item.nodes.map(parseNode);
   if (nodes.some((node) => !node)) return null;
-  const edges = item.edges.filter((edge): edge is PipelineEdge => {
-    if (!edge || typeof edge !== "object") return false;
+  const edges = item.edges.map((edge): PipelineEdge | null => {
+    if (!edge || typeof edge !== "object") return null;
     const candidate = edge as Partial<PipelineEdge>;
-    return typeof candidate.id === "string" && typeof candidate.source === "string" &&
-      typeof candidate.target === "string" && Number.isFinite(candidate.order);
+    if (
+      typeof candidate.id !== "string" ||
+      typeof candidate.source !== "string" ||
+      typeof candidate.target !== "string" ||
+      !Number.isFinite(candidate.order)
+    ) return null;
+    const mode = candidate.mode === "approval" ? "approval" : "automatic";
+    return {
+      id: candidate.id,
+      source: candidate.source,
+      target: candidate.target,
+      order: candidate.order!,
+      mode,
+      approvalMessage: mode === "approval" && typeof candidate.approvalMessage === "string"
+        ? candidate.approvalMessage
+        : "",
+    };
   });
-  if (edges.length !== item.edges.length) return null;
+  if (edges.some((edge) => !edge)) return null;
+  let normalizedNodes = nodes as PipelineNode[];
+  let normalizedEdges = edges as PipelineEdge[];
+  for (const node of normalizedNodes.filter(
+    (entry): entry is PipelineApprovalNode => entry.type === "approval",
+  )) {
+    const incoming = normalizedEdges.filter((edge) => edge.target === node.id);
+    const outgoing = normalizedEdges.filter((edge) => edge.source === node.id);
+    if (
+      incoming.length !== 1 ||
+      outgoing.length !== 1 ||
+      normalizedEdges.some(
+        (edge) => edge.source === incoming[0].source && edge.target === outgoing[0].target,
+      )
+    ) continue;
+    normalizedNodes = normalizedNodes.filter((entry) => entry.id !== node.id);
+    normalizedEdges = [
+      ...normalizedEdges.filter((edge) => edge.source !== node.id && edge.target !== node.id),
+      {
+        id: outgoing[0].id,
+        source: incoming[0].source,
+        target: outgoing[0].target,
+        order: outgoing[0].order,
+        mode: "approval",
+        approvalMessage: node.message,
+      },
+    ];
+  }
   return {
     schemaVersion: PIPELINE_SCHEMA_VERSION,
     id: item.id,
@@ -200,8 +281,8 @@ function parseDefinition(value: unknown): PipelineDefinition | null {
       y: typeof viewport?.y === "number" ? viewport.y : 0,
       zoom: typeof viewport?.zoom === "number" ? viewport.zoom : 1,
     },
-    nodes: nodes as PipelineNode[],
-    edges,
+    nodes: normalizedNodes,
+    edges: normalizedEdges,
   };
 }
 

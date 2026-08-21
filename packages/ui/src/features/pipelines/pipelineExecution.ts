@@ -10,11 +10,13 @@ import {
 import { asRecord, fieldString } from "../agents/types";
 import { createPipelineRun, executePipelineRun } from "./pipelineRunner";
 import { PipelineTurnCleanupError } from "./codexRuntime";
+import type { PipelineApprovalDecision } from "./types";
 import {
   patchPipelineRun,
+  patchPipelineRunEdge,
   patchPipelineRunNode,
+  patchPipelineTaskRun,
   pipelineRunIsActive,
-  selectedPipeline,
   setPipelineError,
   setPipelineRequests,
   setPipelineRun,
@@ -29,7 +31,16 @@ interface ThreadOwner {
   active: boolean;
 }
 
+interface PendingApprovalGate {
+  runId: string;
+  requestId: string;
+  kind: "node" | "edge";
+  respond: (decision: PipelineApprovalDecision) => void;
+  cancel: () => void;
+}
+
 const threadOwners = new Map<string, ThreadOwner>();
+const pendingApprovalGates = new Map<string, PendingApprovalGate>();
 let activeController: AbortController | null = null;
 let activeExecution: Promise<void> | null = null;
 let activeRunId: string | null = null;
@@ -39,6 +50,35 @@ let lastStopGeneration: number | null = null;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function waitForPipelineApproval(
+  runId: string,
+  requestId: string,
+  kind: PendingApprovalGate["kind"],
+  signal: AbortSignal,
+): Promise<PipelineApprovalDecision> {
+  return new Promise((resolve, reject) => {
+    const key = `${kind}:${requestId}`;
+    const cleanup = () => {
+      signal.removeEventListener("abort", cancel);
+      pendingApprovalGates.delete(key);
+    };
+    const cancel = () => {
+      cleanup();
+      reject(new DOMException("Pipeline run stopped", "AbortError"));
+    };
+    const respond = (decision: PipelineApprovalDecision) => {
+      cleanup();
+      resolve(decision);
+    };
+    if (signal.aborted) {
+      cancel();
+      return;
+    }
+    signal.addEventListener("abort", cancel, { once: true });
+    pendingApprovalGates.set(key, { runId, requestId, kind, respond, cancel });
+  });
 }
 
 function requestThreadId(request: CodexServerRequest): string | null {
@@ -174,32 +214,39 @@ function markUnfinished(status: "cancelled" | "skipped", runId: string) {
       patchPipelineRunNode(node.nodeId, { status, completedAt: Date.now() }, runId);
     }
   }
+  for (const edge of Object.values(run.edges)) {
+    if (edge.status === "pending" || edge.status === "waitingForApproval") {
+      patchPipelineRunEdge(edge.edgeId, { status, completedAt: Date.now() }, runId);
+    }
+  }
 }
 
-export async function startPipelineRun(cwd: string): Promise<void> {
+export async function startPipelineRun(cwd: string, taskId: string): Promise<void> {
   const state = usePipelineState();
   const agents = useAgentState();
-  const definition = selectedPipeline();
-  const task = state.task.trim();
+  const task = state.tasks.find((entry) => entry.id === taskId);
+  const definition = state.pipelines.find((entry) => entry.id === task?.pipelineId);
+  const prompt = task ? `# ${task.title.trim()}\n\n${task.description.trim()}` : "";
   if (pipelineRunIsActive() || activeExecution) return;
   if (lastStopError) {
     setPipelineError(`${lastStopError.message} Restart Codex before starting another run.`);
     return;
   }
-  if (!definition || state.cwd !== cwd) {
-    setPipelineError("Select a pipeline in the active project first.");
+  if (!task || !definition || state.cwd !== cwd) {
+    setPipelineError("Select a task with an available pipeline template first.");
     return;
   }
-  if (!task) {
+  if (!prompt) {
     setPipelineError("Describe the task this pipeline should complete.");
     return;
   }
-  if (!agents.server?.ready || !agents.account?.account) {
+  const requiresCodex = definition.nodes.some((node) => node.type === "agent");
+  if (requiresCodex && (!agents.server?.ready || !agents.account?.account)) {
     setPipelineError("Connect your ChatGPT account in Agents before running a pipeline.");
     return;
   }
 
-  const run = createPipelineRun(definition, cwd, task);
+  const run = createPipelineRun(definition, cwd, prompt, task.id);
   const controller = new AbortController();
   threadOwners.clear();
   stopRequested = false;
@@ -209,6 +256,14 @@ export async function startPipelineRun(cwd: string): Promise<void> {
   activeRunId = run.id;
   setPipelineError(null);
   setPipelineRun(run);
+  patchPipelineTaskRun(task.id, {
+    runCount: task.runCount + 1,
+    lastRunId: run.id,
+    lastRunStatus: "queued",
+    lastRunAt: run.createdAt,
+    lastOutput: null,
+    lastError: null,
+  });
 
   const execution = (async () => {
     try {
@@ -219,6 +274,9 @@ export async function startPipelineRun(cwd: string): Promise<void> {
         },
         fallbackModel: agents.model,
         fallbackEffort: agents.effort,
+        requestApproval: (node) => waitForPipelineApproval(run.id, node.id, "node", controller.signal),
+        requestConnectionApproval: (edge) =>
+          waitForPipelineApproval(run.id, edge.id, "edge", controller.signal),
         callbacks: {
           onRunStatus: (status, error = null, output = null) => {
             const terminal = status === "completed" || status === "failed" || status === "cancelled";
@@ -226,8 +284,14 @@ export async function startPipelineRun(cwd: string): Promise<void> {
               { status, error, output, completedAt: terminal ? Date.now() : null },
               run.id,
             );
+            patchPipelineTaskRun(task.id, {
+              lastRunStatus: status,
+              lastOutput: output,
+              lastError: error,
+            });
           },
           onNodePatch: (nodeId, patch) => patchPipelineRunNode(nodeId, patch, run.id),
+          onEdgePatch: (edgeId, patch) => patchPipelineRunEdge(edgeId, patch, run.id),
           onThreadOwned: (threadId, nodeId) => {
             if (usePipelineState().run?.id !== run.id) return;
             threadOwners.set(threadId, {
@@ -271,12 +335,19 @@ export async function startPipelineRun(cwd: string): Promise<void> {
         error: cancelled ? null : messageOf(error),
         completedAt: Date.now(),
       }, run.id);
+      patchPipelineTaskRun(task.id, {
+        lastRunStatus: cancelled ? "cancelled" : "failed",
+        lastError: cancelled ? null : messageOf(error),
+      });
     } finally {
       if (activeRunId === run.id) {
         for (const [threadId, owner] of threadOwners) {
           if (owner.runId === run.id) threadOwners.delete(threadId);
         }
         activeController = null;
+        for (const gate of [...pendingApprovalGates.values()]) {
+          if (gate.runId === run.id) gate.cancel();
+        }
         setPipelineRequests([]);
         activeExecution = null;
         activeRunId = null;
@@ -316,6 +387,26 @@ export async function respondToPipelineRequest(
   if (!request) return;
   await codexRespondServerRequest(requestId, response);
   removeRequest(requestId);
+}
+
+export function respondToPipelineApproval(
+  nodeId: string,
+  decision: PipelineApprovalDecision,
+): void {
+  const gate = pendingApprovalGates.get(`node:${nodeId}`);
+  const run = usePipelineState().run;
+  if (!gate || run?.id !== gate.runId || run.nodes[nodeId]?.status !== "waitingForApproval") return;
+  gate.respond(decision);
+}
+
+export function respondToPipelineConnectionApproval(
+  edgeId: string,
+  decision: PipelineApprovalDecision,
+): void {
+  const gate = pendingApprovalGates.get(`edge:${edgeId}`);
+  const run = usePipelineState().run;
+  if (!gate || run?.id !== gate.runId || run.edges[edgeId]?.status !== "waitingForApproval") return;
+  gate.respond(decision);
 }
 
 registerWorkspaceSwitchGuard(async () => {

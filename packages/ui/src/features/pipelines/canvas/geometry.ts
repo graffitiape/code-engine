@@ -17,7 +17,9 @@ const AGENT_NODE_SIZE: PipelineNodeSize = { width: 264, height: 184 };
 const TERMINAL_NODE_SIZE: PipelineNodeSize = { width: 208, height: 100 };
 
 export function pipelineNodeSize(node: PipelineNode): PipelineNodeSize {
-  return node.type === "agent" ? AGENT_NODE_SIZE : TERMINAL_NODE_SIZE;
+  return node.type === "agent" || node.type === "integration" || node.type === "approval"
+    ? AGENT_NODE_SIZE
+    : TERMINAL_NODE_SIZE;
 }
 
 export function pipelinePortPoint(

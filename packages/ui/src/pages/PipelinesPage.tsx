@@ -1,38 +1,26 @@
-import { Component, Show, createEffect, createMemo } from "solid-js";
+import { Component, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Icon, PageSwitcher, ProjectSwitcher } from "../design";
 import type { PageKey } from "../design";
-import { PipelineCanvas } from "../features/pipelines/canvas/PipelineCanvas";
-import { PipelineInspector } from "../features/pipelines/PipelineInspector";
-import { PipelineRail } from "../features/pipelines/PipelineRail";
-import { PipelineRunDock } from "../features/pipelines/PipelineRunDock";
+import { PipelineTaskBoard } from "../features/pipelines/PipelineTaskBoard";
+import { PipelineTemplateWorkspace } from "../features/pipelines/PipelineTemplateWorkspace";
 import {
+  respondToPipelineApproval,
+  respondToPipelineConnectionApproval,
   respondToPipelineRequest,
   startPipelineRun,
   stopPipelineRun,
 } from "../features/pipelines/pipelineExecution";
 import {
-  addAgentNode,
+  addPipelineTask,
   clearPipelineError,
-  connectNodes,
-  createPipeline,
-  deleteEdge,
-  deleteNode,
-  deleteSelectedPipeline,
-  duplicateSelectedPipeline,
+  deletePipelineTask,
   initializePipelines,
-  moveNode,
   pipelineRunIsActive,
-  renameSelectedPipeline,
   selectPipeline,
+  selectPipelineTask,
   selectedPipeline,
-  selectPipelineEdge,
-  selectPipelineNode,
-  setConnectionSource,
-  setPipelineError,
-  setPipelineTask,
-  setViewport,
   syncPipelineModels,
-  updateNode,
+  updatePipelineTask,
   usePipelineState,
 } from "../features/pipelines/pipelineStore";
 import { useAgentState } from "../features/agents/agentStore";
@@ -50,7 +38,7 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
   const agents = useAgentState();
   const state = usePipelineState();
   const pipeline = createMemo(selectedPipeline);
-  let canvasRegionRef: HTMLDivElement | undefined;
+  const [view, setView] = createSignal<"tasks" | "templates">("tasks");
   const active = () => pipelineRunIsActive();
   const codexReady = () => Boolean(
     workspace.activeRoot() &&
@@ -58,28 +46,6 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
     agents.server?.ready &&
     agents.account?.account,
   );
-  const runStates = () => {
-    const run = state.run;
-    if (!run || run.pipelineId !== pipeline()?.id) return {};
-    return run.nodes;
-  };
-
-  const addAgent = () => {
-    const rect = canvasRegionRef?.getBoundingClientRect();
-    const nodeId = addAgentNode(
-      agents.model,
-      agents.effort || "medium",
-      rect ? { width: rect.width, height: rect.height } : undefined,
-    );
-    if (!nodeId) return;
-    queueMicrotask(() => {
-      const cards = canvasRegionRef?.querySelectorAll<HTMLElement>("[data-node-id]");
-      [...(cards ?? [])]
-        .find((card) => card.dataset.nodeId === nodeId)
-        ?.focus({ preventScroll: true });
-    });
-  };
-
   createEffect(() => {
     initializePipelines(workspace.activeRoot(), agents.model, agents.effort || "medium");
   });
@@ -125,93 +91,66 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
           }
         >
           <Show when={pipeline()}>
-            {(definition) => (
-              <main class="pipelines-root">
-                <PipelineRail
-                  pipelines={state.pipelines}
-                  selectedId={state.selectedId}
-                  disabled={active()}
-                  onSelect={selectPipeline}
-                  onCreate={() => createPipeline(agents.model, agents.effort || "medium")}
-                  onDuplicate={duplicateSelectedPipeline}
-                  onDelete={() => deleteSelectedPipeline(agents.model, agents.effort || "medium")}
-                />
+            <main class="pipelines-page-root">
+                <header class="pipeline-section-bar">
+                  <nav aria-label="Pipeline workspace view">
+                    <button
+                      type="button"
+                      class={view() === "tasks" ? "active" : ""}
+                      aria-current={view() === "tasks" ? "page" : undefined}
+                      onClick={() => setView("tasks")}
+                    >
+                      Task runs <span>{state.tasks.length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class={view() === "templates" ? "active" : ""}
+                      aria-current={view() === "templates" ? "page" : undefined}
+                      onClick={() => setView("templates")}
+                    >
+                      Templates <span>{state.pipelines.length}</span>
+                    </button>
+                  </nav>
+                  <p>{view() === "tasks" ? "Choose a pipeline for each task, then run it whenever you need." : "Build reusable flows from Codex agents and deterministic integrations."}</p>
+                </header>
 
-                <section class="pipeline-workspace">
-                  <header class="pipeline-workspace-head">
-                    <div>
-                      <span class="pipeline-eyebrow">ACTIVE PIPELINE</span>
-                      <strong>{definition().name}</strong>
-                      <small>{definition().nodes.length} stations · {definition().edges.length} connections</small>
-                    </div>
-                    <div class="pipeline-workspace-actions">
-                      <Show when={state.connectionSource}>
-                        <span class="pipeline-connect-hint">Choose a downstream input · Esc to cancel</span>
-                      </Show>
-                      <button
-                        type="button"
-                        class="pipeline-add-agent"
-                        disabled={active() || !agents.model}
-                        onClick={addAgent}
-                      >
-                        <Icon name="plus" /> Add agent
-                      </button>
-                    </div>
-                  </header>
-
-                  <div ref={canvasRegionRef} class="pipeline-canvas-region">
-                    <PipelineCanvas
-                      nodes={definition().nodes}
-                      edges={definition().edges}
-                      selectedNodeId={state.selectedNodeId}
-                      selectedEdgeId={state.selectedEdgeId}
-                      runStates={runStates()}
-                      viewport={definition().viewport}
-                      connectionSource={state.connectionSource}
-                      readOnly={active()}
-                      onSelectNode={selectPipelineNode}
-                      onSelectEdge={selectPipelineEdge}
-                      onMoveCommit={moveNode}
-                      onConnect={connectNodes}
-                      onDeleteNode={deleteNode}
-                      onDeleteEdge={deleteEdge}
-                      onViewportChange={setViewport}
-                      onConnectionSourceChange={setConnectionSource}
-                      onErrorAnnouncement={setPipelineError}
-                      ariaLabel={`${definition().name} pipeline canvas`}
+                <Show
+                  when={view() === "templates"}
+                  fallback={
+                    <PipelineTaskBoard
+                      tasks={state.tasks}
+                      pipelines={state.pipelines}
+                      selectedTaskId={state.selectedTaskId}
+                      selectedPipelineId={state.selectedId}
+                      projectPath={workspace.activeRoot()!}
+                      run={state.run}
+                      requests={state.pendingRequests}
+                      codexReady={codexReady()}
+                      active={active()}
+                      error={state.error}
+                      onSelect={selectPipelineTask}
+                      onCreate={addPipelineTask}
+                      onPipeline={(taskId, pipelineId) => updatePipelineTask(taskId, { pipelineId })}
+                      onDelete={deletePipelineTask}
+                      onRun={(taskId) => void startPipelineRun(workspace.activeRoot()!, taskId)}
+                      onStop={() => void stopPipelineRun()}
+                      onRespond={respondToPipelineRequest}
+                      onApproval={(kind, id, decision) => {
+                        if (kind === "edge") respondToPipelineConnectionApproval(id, decision);
+                        else respondToPipelineApproval(id, decision);
+                      }}
+                      onOpenAgents={() => props.onNavigatePage("agents")}
+                      onOpenTemplate={(pipelineId) => {
+                        selectPipeline(pipelineId);
+                        setView("templates");
+                      }}
+                      onClearError={clearPipelineError}
                     />
-                  </div>
-
-                  <PipelineRunDock
-                    pipeline={definition()}
-                    task={state.task}
-                    run={state.run}
-                    requests={state.pendingRequests}
-                    codexReady={codexReady()}
-                    active={active()}
-                    error={state.error}
-                    onTask={setPipelineTask}
-                    onRun={() => void startPipelineRun(workspace.activeRoot()!)}
-                    onStop={() => void stopPipelineRun()}
-                    onRespond={respondToPipelineRequest}
-                    onOpenAgents={() => props.onNavigatePage("agents")}
-                    onClearError={clearPipelineError}
-                  />
-                </section>
-
-                <PipelineInspector
-                  pipeline={definition()}
-                  selectedNodeId={state.selectedNodeId}
-                  selectedEdgeId={state.selectedEdgeId}
-                  models={agents.models}
-                  disabled={active()}
-                  onRenamePipeline={renameSelectedPipeline}
-                  onUpdateNode={updateNode}
-                  onDeleteNode={deleteNode}
-                  onDeleteEdge={deleteEdge}
-                />
-              </main>
-            )}
+                  }
+                >
+                  <PipelineTemplateWorkspace active={active()} />
+                </Show>
+            </main>
           </Show>
         </Show>
       </div>

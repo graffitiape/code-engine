@@ -1,6 +1,7 @@
 import { createStore } from "solid-js/store";
 import type { CodexModel, CodexServerRequest } from "../../bridge/tauri";
 import { validatePipelineConnection } from "./graph";
+import { pipelineAgentPreset, type PipelineAgentPresetId } from "./agentPresets";
 import {
   createStarterPipeline,
   duplicatePipeline as clonePipeline,
@@ -8,15 +9,24 @@ import {
   newPipelineId,
   savePipelines,
 } from "./pipelinePersistence";
+import {
+  createPipelineTask as createTaskRecord,
+  loadPipelineTasks,
+  savePipelineTasks,
+} from "./pipelineTaskPersistence";
 import type {
   PipelineAgentNode,
+  PipelineConnectionMode,
   PipelineDefinition,
   PipelineEdge,
+  PipelineEdgeRunState,
+  PipelineIntegrationNode,
   PipelineNode,
   PipelineNodeRunState,
   PipelinePoint,
   PipelineRun,
   PipelineRunStatus,
+  PipelineTask,
   PipelineViewport,
 } from "./types";
 import { PIPELINE_MAX_EDGES, PIPELINE_MAX_NODES } from "./types";
@@ -28,7 +38,8 @@ interface PipelineWorkspaceState {
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   connectionSource: string | null;
-  task: string;
+  tasks: PipelineTask[];
+  selectedTaskId: string | null;
   run: PipelineRun | null;
   pendingRequests: CodexServerRequest[];
   error: string | null;
@@ -42,7 +53,8 @@ const [pipelineState, setPipelineState] = createStore<PipelineWorkspaceState>({
   selectedNodeId: null,
   selectedEdgeId: null,
   connectionSource: null,
-  task: "",
+  tasks: [],
+  selectedTaskId: null,
   run: null,
   pendingRequests: [],
   error: null,
@@ -83,7 +95,9 @@ function overlapsNode(
   node: PipelineNode,
   gap: number,
 ): boolean {
-  const size = node.type === "agent" ? AGENT_NODE_SIZE : TERMINAL_NODE_SIZE;
+  const size = node.type === "agent" || node.type === "integration" || node.type === "approval"
+    ? AGENT_NODE_SIZE
+    : TERMINAL_NODE_SIZE;
   return !(
     candidate.x + AGENT_NODE_SIZE.width + gap <= node.position.x ||
     candidate.x >= node.position.x + size.width + gap ||
@@ -140,6 +154,10 @@ export function selectedPipeline(): PipelineDefinition | null {
   return pipelineState.pipelines.find((pipeline) => pipeline.id === pipelineState.selectedId) ?? null;
 }
 
+export function selectedPipelineTask(): PipelineTask | null {
+  return pipelineState.tasks.find((task) => task.id === pipelineState.selectedTaskId) ?? null;
+}
+
 function persist() {
   if (viewportPersistTimer !== undefined) window.clearTimeout(viewportPersistTimer);
   viewportPersistTimer = undefined;
@@ -148,6 +166,15 @@ function persist() {
     if (!savePipelines(pipelineState.cwd, pipelineState.pipelines, pipelineState.selectedId)) {
       setPipelineState("error", "Pipeline changes could not be saved in this webview.");
     }
+  }
+}
+
+function persistTasks() {
+  if (
+    pipelineState.cwd &&
+    !savePipelineTasks(pipelineState.cwd, pipelineState.tasks, pipelineState.selectedTaskId)
+  ) {
+    setPipelineState("error", "Pipeline tasks could not be saved in this webview.");
   }
 }
 
@@ -189,6 +216,8 @@ export function initializePipelines(cwd: string | null, model = "", effort = "me
       selectedNodeId: null,
       selectedEdgeId: null,
       connectionSource: null,
+      tasks: [],
+      selectedTaskId: null,
       run: null,
       pendingRequests: [],
       error: null,
@@ -196,6 +225,7 @@ export function initializePipelines(cwd: string | null, model = "", effort = "me
     return;
   }
   const loaded = loadPipelines(cwd, createStarterPipeline("Development pipeline", model, effort));
+  const taskState = loadPipelineTasks(cwd, new Set(loaded.pipelines.map((pipeline) => pipeline.id)));
   setPipelineState({
     cwd,
     pipelines: loaded.pipelines,
@@ -203,12 +233,14 @@ export function initializePipelines(cwd: string | null, model = "", effort = "me
     selectedNodeId: null,
     selectedEdgeId: null,
     connectionSource: null,
-    task: "",
+    tasks: taskState.tasks,
+    selectedTaskId: taskState.selectedId,
     run: null,
     pendingRequests: [],
     error: null,
   });
   persist();
+  persistTasks();
 }
 
 export function selectPipeline(id: string) {
@@ -242,8 +274,15 @@ export function deleteSelectedPipeline(model = "", effort = "medium") {
   let pipelines = pipelineState.pipelines.filter((pipeline) => pipeline.id !== current.id);
   if (!pipelines.length) pipelines = [createStarterPipeline("Development pipeline", model, effort)];
   setPipelineState("pipelines", pipelines);
+  setPipelineState(
+    "tasks",
+    pipelineState.tasks.map((task) => task.pipelineId === current.id
+      ? { ...task, pipelineId: pipelines[0].id, updatedAt: Date.now() }
+      : task),
+  );
   setPipelineState({ selectedId: pipelines[0].id, selectedNodeId: null, selectedEdgeId: null });
   persist();
+  persistTasks();
 }
 
 export function renameSelectedPipeline(name: string) {
@@ -255,6 +294,7 @@ export function addAgentNode(
   model: string,
   effort: string,
   canvasSize?: PipelineCanvasSize,
+  presetId: PipelineAgentPresetId = "custom",
 ): string | null {
   const pipeline = selectedPipeline();
   if (!pipeline || !mayEdit()) return null;
@@ -263,30 +303,79 @@ export function addAgentNode(
     return null;
   }
   const agents = pipeline.nodes.filter((node) => node.type === "agent");
+  const preset = pipelineAgentPreset(presetId);
+  const matchingNames = agents.filter((agent) => agent.name === preset.name || agent.name.startsWith(`${preset.name} `));
   const node: PipelineAgentNode = {
     id: newPipelineId("node"),
     type: "agent",
-    name: `Agent ${agents.length + 1}`,
+    name: matchingNames.length ? `${preset.name} ${matchingNames.length + 1}` : preset.name,
     position: visibleAgentPosition(pipeline, canvasSize),
-    instructions: "Complete this stage using the original task and upstream handoffs. Return a clear result for downstream agents.",
+    instructions: preset.instructions,
     model,
     effort,
-    permission: "read-only",
+    permission: preset.permission,
     retryCount: 1,
-    color: ["cyan", "purple", "green", "blue", "orange"][agents.length % 5],
+    color: preset.color,
   };
   replaceSelected((definition) => ({ ...definition, nodes: [...definition.nodes, node] }));
   setPipelineState({ selectedNodeId: node.id, selectedEdgeId: null });
   return node.id;
 }
 
-export function updateNode(nodeId: string, patch: Partial<PipelineAgentNode> & { name?: string }) {
+export function addIntegrationNode(canvasSize?: PipelineCanvasSize): string | null {
+  const pipeline = selectedPipeline();
+  if (!pipeline || !mayEdit()) return null;
+  if (pipeline.nodes.length >= PIPELINE_MAX_NODES) {
+    setPipelineState("error", `Pipelines support at most ${PIPELINE_MAX_NODES} nodes.`);
+    return null;
+  }
+  const integrations = pipeline.nodes.filter((node) => node.type === "integration");
+  const node: PipelineIntegrationNode = {
+    id: newPipelineId("node"),
+    type: "integration",
+    name: integrations.length ? `Git ${integrations.length + 1}` : "Commit & push",
+    position: visibleAgentPosition(pipeline, canvasSize),
+    provider: "git",
+    action: "commit-push",
+    stageAll: true,
+    commitMessage: "feat: {{task}}",
+    color: "orange",
+  };
+  replaceSelected((definition) => ({ ...definition, nodes: [...definition.nodes, node] }));
+  setPipelineState({ selectedNodeId: node.id, selectedEdgeId: null });
+  return node.id;
+}
+
+export interface PipelineNodePatch {
+  name?: string;
+  instructions?: string;
+  model?: string;
+  effort?: string;
+  permission?: PipelineAgentNode["permission"];
+  retryCount?: number;
+  color?: string;
+  provider?: PipelineIntegrationNode["provider"];
+  action?: PipelineIntegrationNode["action"];
+  stageAll?: boolean;
+  commitMessage?: string;
+  message?: string;
+}
+
+export function updateNode(nodeId: string, patch: PipelineNodePatch) {
   replaceSelected((pipeline) => ({
     ...pipeline,
     nodes: pipeline.nodes.map((node): PipelineNode => {
       if (node.id !== nodeId) return node;
-      if (node.type !== "agent") return { ...node, name: patch.name ?? node.name };
-      return { ...node, ...patch, id: node.id, type: "agent", position: node.position };
+      if (node.type === "agent") {
+        return { ...node, ...patch, id: node.id, type: "agent", position: node.position };
+      }
+      if (node.type === "integration") {
+        return { ...node, ...patch, id: node.id, type: "integration", position: node.position };
+      }
+      if (node.type === "approval") {
+        return { ...node, ...patch, id: node.id, type: "approval", position: node.position };
+      }
+      return { ...node, name: patch.name ?? node.name };
     }),
   }));
 }
@@ -295,7 +384,9 @@ export function moveNode(nodeId: string, position: PipelinePoint) {
   replaceSelected((pipeline) => ({
     ...pipeline,
     nodes: pipeline.nodes.map((node) =>
-      node.id === nodeId && node.type === "agent" ? { ...node, position } : node,
+      node.id === nodeId && (node.type === "agent" || node.type === "integration" || node.type === "approval")
+        ? { ...node, position }
+        : node,
     ),
   }));
 }
@@ -303,13 +394,27 @@ export function moveNode(nodeId: string, position: PipelinePoint) {
 export function deleteNode(nodeId: string) {
   replaceSelected((pipeline) => ({
     ...pipeline,
-    nodes: pipeline.nodes.filter((node) => node.id !== nodeId || node.type !== "agent"),
+    nodes: pipeline.nodes.filter(
+      (node) => node.id !== nodeId || (
+        node.type !== "agent" && node.type !== "integration" && node.type !== "approval"
+      ),
+    ),
     edges: pipeline.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
   }));
   setPipelineState({ selectedNodeId: null, connectionSource: null });
 }
 
-export function connectNodes(source: string, target: string): boolean {
+function approvalMessageFor(pipeline: PipelineDefinition, source: string, target: string): string {
+  const sourceName = pipeline.nodes.find((node) => node.id === source)?.name ?? "upstream step";
+  const targetName = pipeline.nodes.find((node) => node.id === target)?.name ?? "downstream step";
+  return `Review ${sourceName}'s result before allowing ${targetName} to start.`;
+}
+
+export function connectNodes(
+  source: string,
+  target: string,
+  mode: PipelineConnectionMode = "automatic",
+): boolean {
   const pipeline = selectedPipeline();
   if (!pipeline || !mayEdit()) return false;
   if (pipeline.edges.length >= PIPELINE_MAX_EDGES) {
@@ -322,10 +427,43 @@ export function connectNodes(source: string, target: string): boolean {
     return false;
   }
   const order = Math.max(-1, ...pipeline.edges.filter((edge) => edge.target === target).map((edge) => edge.order)) + 1;
-  const edge: PipelineEdge = { id: newPipelineId("edge"), source, target, order };
+  const edge: PipelineEdge = {
+    id: newPipelineId("edge"),
+    source,
+    target,
+    order,
+    mode,
+    approvalMessage: mode === "approval" ? approvalMessageFor(pipeline, source, target) : "",
+  };
   replaceSelected((definition) => ({ ...definition, edges: [...definition.edges, edge] }));
   setPipelineState({ connectionSource: null, selectedEdgeId: edge.id, selectedNodeId: null, announcement: "Nodes connected." });
   return true;
+}
+
+export interface PipelineEdgePatch {
+  mode?: PipelineConnectionMode;
+  approvalMessage?: string;
+}
+
+export function updateEdge(edgeId: string, patch: PipelineEdgePatch) {
+  replaceSelected((pipeline) => ({
+    ...pipeline,
+    edges: pipeline.edges.map((edge) => {
+      if (edge.id !== edgeId) return edge;
+      const mode = patch.mode ?? edge.mode;
+      const approvalMessage = patch.approvalMessage ?? (
+        mode === "approval" && !edge.approvalMessage.trim()
+          ? approvalMessageFor(pipeline, edge.source, edge.target)
+          : edge.approvalMessage
+      );
+      return {
+        ...edge,
+        ...patch,
+        mode,
+        approvalMessage: mode === "approval" ? approvalMessage : "",
+      };
+    }),
+  }));
 }
 
 export function deleteEdge(edgeId: string) {
@@ -383,7 +521,78 @@ export function syncPipelineModels(models: readonly CodexModel[]) {
 export const selectPipelineNode = (id: string | null) => setPipelineState({ selectedNodeId: id, selectedEdgeId: null });
 export const selectPipelineEdge = (id: string | null) => setPipelineState({ selectedEdgeId: id, selectedNodeId: null });
 export const setConnectionSource = (id: string | null) => setPipelineState("connectionSource", id);
-export const setPipelineTask = (task: string) => setPipelineState("task", task);
+
+export function selectPipelineTask(id: string) {
+  if (!pipelineState.tasks.some((task) => task.id === id)) return;
+  if (pipelineRunIsActive() && pipelineState.run?.taskId !== id) return;
+  setPipelineState("selectedTaskId", id);
+  persistTasks();
+}
+
+export function addPipelineTask(title: string, description: string, pipelineId: string): string | null {
+  if (pipelineRunIsActive()) {
+    setPipelineState("error", "Stop the active run before adding another task.");
+    return null;
+  }
+  const pipeline = pipelineState.pipelines.find((entry) => entry.id === pipelineId);
+  const cleanTitle = title.trim();
+  const cleanDescription = description.trim();
+  if (!pipeline || !cleanTitle || !cleanDescription) {
+    setPipelineState("error", "A task needs a title, description, and pipeline template.");
+    return null;
+  }
+  const task = createTaskRecord(cleanTitle, cleanDescription, pipelineId);
+  setPipelineState("tasks", [task, ...pipelineState.tasks]);
+  setPipelineState("selectedTaskId", task.id);
+  persistTasks();
+  return task.id;
+}
+
+export function updatePipelineTask(
+  taskId: string,
+  patch: Partial<Pick<PipelineTask, "title" | "description" | "pipelineId">>,
+) {
+  if (pipelineRunIsActive()) return;
+  const pipelineExists = patch.pipelineId === undefined || pipelineState.pipelines.some(
+    (pipeline) => pipeline.id === patch.pipelineId,
+  );
+  if (!pipelineExists) return;
+  setPipelineState(
+    "tasks",
+    pipelineState.tasks.map((task) => task.id === taskId
+      ? { ...task, ...patch, updatedAt: Date.now() }
+      : task),
+  );
+  persistTasks();
+}
+
+export function deletePipelineTask(taskId: string) {
+  if (pipelineRunIsActive()) return;
+  const task = pipelineState.tasks.find((entry) => entry.id === taskId);
+  if (!task || !window.confirm(`Delete “${task.title}”?`)) return;
+  const tasks = pipelineState.tasks.filter((entry) => entry.id !== taskId);
+  setPipelineState({
+    tasks,
+    selectedTaskId: pipelineState.selectedTaskId === taskId ? tasks[0]?.id ?? null : pipelineState.selectedTaskId,
+  });
+  persistTasks();
+}
+
+export function patchPipelineTaskRun(
+  taskId: string,
+  patch: Partial<Pick<PipelineTask,
+    "runCount" | "lastRunId" | "lastRunStatus" | "lastRunAt" | "lastOutput" | "lastError"
+  >>,
+) {
+  setPipelineState(
+    "tasks",
+    pipelineState.tasks.map((task) => task.id === taskId
+      ? { ...task, ...patch, updatedAt: Date.now() }
+      : task),
+  );
+  persistTasks();
+}
+
 export function clearPipelineError() {
   setPipelineState("error", null);
   if (pipelineState.run?.error) patchPipelineRun({ error: null }, pipelineState.run.id);
@@ -416,6 +625,22 @@ export function patchPipelineRunNode(
     ...run,
     updatedAt: Date.now(),
     nodes: { ...run.nodes, [nodeId]: { ...node, ...patch, nodeId } },
+  });
+}
+
+export function patchPipelineRunEdge(
+  edgeId: string,
+  patch: Partial<PipelineEdgeRunState>,
+  expectedRunId?: string,
+) {
+  const run = pipelineState.run;
+  if (expectedRunId && run?.id !== expectedRunId) return;
+  const edge = run?.edges[edgeId];
+  if (!run || !edge) return;
+  setPipelineState("run", {
+    ...run,
+    updatedAt: Date.now(),
+    edges: { ...run.edges, [edgeId]: { ...edge, ...patch, edgeId } },
   });
 }
 

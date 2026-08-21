@@ -35,12 +35,39 @@ export interface PipelineAgentNode extends PipelineNodeBase {
   color: string;
 }
 
+export type PipelineIntegrationAction = "commit" | "commit-push";
+
+/** A deterministic project integration that runs without starting a Codex turn. */
+export interface PipelineIntegrationNode extends PipelineNodeBase {
+  type: "integration";
+  provider: "git";
+  action: PipelineIntegrationAction;
+  stageAll: boolean;
+  commitMessage: string;
+  color: string;
+}
+
+/** A human checkpoint that must be approved before downstream steps can run. */
+export interface PipelineApprovalNode extends PipelineNodeBase {
+  type: "approval";
+  message: string;
+  color: string;
+}
+
 /** The single result sink. It collects its predecessors without running Codex. */
 export interface PipelineOutputNode extends PipelineNodeBase {
   type: "output";
 }
 
-export type PipelineNode = PipelineInputNode | PipelineAgentNode | PipelineOutputNode;
+export type PipelineNode =
+  | PipelineInputNode
+  | PipelineAgentNode
+  | PipelineIntegrationNode
+  | PipelineApprovalNode
+  | PipelineOutputNode;
+
+export type PipelineApprovalDecision = "approved" | "rejected";
+export type PipelineConnectionMode = "automatic" | "approval";
 
 export interface PipelineEdge {
   id: string;
@@ -48,6 +75,9 @@ export interface PipelineEdge {
   target: string;
   /** Stable ordering for composing a join node's upstream context. */
   order: number;
+  mode: PipelineConnectionMode;
+  /** Required reviewer guidance when mode is approval; empty for automatic handoffs. */
+  approvalMessage: string;
 }
 
 export interface PipelineDefinition {
@@ -93,9 +123,26 @@ export interface PipelineNodeRunState {
   error: string | null;
 }
 
+export type PipelineEdgeRunStatus =
+  | "pending"
+  | "waitingForApproval"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  | "skipped";
+
+export interface PipelineEdgeRunState {
+  edgeId: string;
+  status: PipelineEdgeRunStatus;
+  startedAt: number | null;
+  completedAt: number | null;
+  error: string | null;
+}
+
 export interface PipelineRun {
   id: string;
   pipelineId: string;
+  taskId: string | null;
   /** Canonical project root captured at run creation. */
   cwd: string;
   input: string;
@@ -103,11 +150,28 @@ export interface PipelineRun {
   definition: PipelineDefinition;
   status: PipelineRunStatus;
   nodes: Record<string, PipelineNodeRunState>;
+  /** Runtime state for approval-mode connections only. */
+  edges: Record<string, PipelineEdgeRunState>;
   createdAt: number;
   updatedAt: number;
   completedAt: number | null;
   output: string | null;
   error: string | null;
+}
+
+export interface PipelineTask {
+  id: string;
+  title: string;
+  description: string;
+  pipelineId: string;
+  createdAt: number;
+  updatedAt: number;
+  runCount: number;
+  lastRunId: string | null;
+  lastRunStatus: PipelineRunStatus | null;
+  lastRunAt: number | null;
+  lastOutput: string | null;
+  lastError: string | null;
 }
 
 export type PipelineGraphIssueCode =
@@ -118,10 +182,13 @@ export type PipelineGraphIssueCode =
   | "invalid_node"
   | "duplicate_node_id"
   | "invalid_agent"
+  | "invalid_integration"
+  | "invalid_approval"
   | "input_count"
   | "agent_count"
   | "output_count"
   | "invalid_edge"
+  | "invalid_approval_connection"
   | "duplicate_edge_id"
   | "missing_edge_endpoint"
   | "self_edge"

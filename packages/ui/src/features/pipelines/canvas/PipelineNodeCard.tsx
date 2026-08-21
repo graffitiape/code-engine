@@ -44,19 +44,24 @@ interface NodeDrag {
 const NODE_COLORS = new Set(["cyan", "purple", "green", "blue", "orange"]);
 
 function nodeColor(node: PipelineNode): string {
-  if (node.type !== "agent") return node.type === "input" ? "cyan" : "green";
+  if (node.type === "input") return "cyan";
+  if (node.type === "output") return "green";
   return NODE_COLORS.has(node.color) ? node.color : "purple";
 }
 
 function nodeIcon(node: PipelineNode): string {
   if (node.type === "input") return "play";
   if (node.type === "output") return "download";
+  if (node.type === "integration") return "git";
+  if (node.type === "approval") return "diagWarn";
   return "command";
 }
 
 function nodeKindLabel(node: PipelineNode): string {
   if (node.type === "input") return "Task input";
   if (node.type === "output") return "Pipeline result";
+  if (node.type === "integration") return "Git integration";
+  if (node.type === "approval") return "Approval gate";
   return "Codex agent";
 }
 
@@ -75,7 +80,9 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
   let cardRef: HTMLElement | undefined;
   let drag: NodeDrag | null = null;
 
-  const locked = () => props.node.type !== "agent" || Boolean(props.readOnly);
+  const locked = () =>
+    (props.node.type !== "agent" && props.node.type !== "integration" && props.node.type !== "approval") ||
+    Boolean(props.readOnly);
   const size = () => pipelineNodeSize(props.node);
   const tone = () => pipelineRunTone(props.runState?.status);
   const statusLabel = () => pipelineRunLabel(props.runState?.status);
@@ -237,7 +244,7 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
 
       <header
         class="pipeline-node-head"
-        title={locked() ? `${nodeKindLabel(props.node)} position is locked` : "Drag to move agent"}
+        title={locked() ? `${nodeKindLabel(props.node)} position is locked` : "Drag to move step"}
         onPointerDown={startDrag}
         onPointerMove={moveDrag}
         onPointerUp={finishDrag}
@@ -259,16 +266,7 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
         </span>
       </header>
 
-      <Show
-        when={props.node.type === "agent" ? props.node : null}
-        fallback={
-          <div class="pipeline-terminal-copy">
-            {props.node.type === "input"
-              ? "Receives the task supplied when this pipeline starts."
-              : "Collects the final output from upstream agents."}
-          </div>
-        }
-      >
+      <Show when={props.node.type === "agent" ? props.node : null}>
         {(agent) => (
           <>
             <div class="pipeline-node-meta">
@@ -281,6 +279,43 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
             </p>
           </>
         )}
+      </Show>
+
+      <Show when={props.node.type === "integration" ? props.node : null}>
+        {(integration) => (
+          <>
+            <div class="pipeline-node-meta">
+              <span>Git</span>
+              <span>{integration().stageAll ? "Stage all" : "Staged only"}</span>
+              <span>{integration().action === "commit-push" ? "Push" : "Commit"}</span>
+            </div>
+            <p class="pipeline-node-instructions">
+              {integration().commitMessage || "No commit message configured."}
+            </p>
+          </>
+        )}
+      </Show>
+
+      <Show when={props.node.type === "approval" ? props.node : null}>
+        {(approval) => (
+          <>
+            <div class="pipeline-node-meta">
+              <span>Human decision</span>
+              <span>Pause run</span>
+            </div>
+            <p class="pipeline-node-instructions">
+              {approval().message || "No approval message configured."}
+            </p>
+          </>
+        )}
+      </Show>
+
+      <Show when={props.node.type === "input" || props.node.type === "output"}>
+        <div class="pipeline-terminal-copy">
+          {props.node.type === "input"
+            ? "Receives the task supplied when this pipeline starts."
+            : "Collects the final output from upstream steps."}
+        </div>
       </Show>
 
       <Show when={runMessage()}>

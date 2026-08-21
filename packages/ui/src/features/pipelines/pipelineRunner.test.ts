@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PipelineDefinition, PipelineNodeRunState } from "./types";
+import type {
+  PipelineApprovalDecision,
+  PipelineDefinition,
+  PipelineEdge,
+  PipelineEdgeRunState,
+  PipelineNodeRunState,
+  PipelineRunStatus,
+} from "./types";
 
 const runtime = vi.hoisted(() => ({
   activeReaders: 0,
@@ -11,6 +18,26 @@ const runtime = vi.hoisted(() => ({
   failFirstFor: new Set<string>(),
   alwaysFailFor: new Set<string>(),
   cleanupOnAbortFor: new Set<string>(),
+  gitCalls: [] as string[],
+}));
+
+vi.mock("../../bridge/tauri", () => ({
+  gitStageAll: async () => {
+    runtime.gitCalls.push("stage");
+    return { branch: "feature/tasks", staged: [{ path: "feature.ts" }], unstaged: [], untracked: [] };
+  },
+  gitStatus: async () => {
+    runtime.gitCalls.push("status");
+    return { branch: "feature/tasks", staged: [], unstaged: [], untracked: [] };
+  },
+  gitCommit: async (_path: string, message: string) => {
+    runtime.gitCalls.push(`commit:${message}`);
+    return { shortId: "abc1234", summary: message };
+  },
+  gitPush: async () => {
+    runtime.gitCalls.push("push");
+    return "feature/tasks";
+  },
 }));
 
 vi.mock("../agents/agentStore", () => ({
@@ -76,6 +103,10 @@ vi.mock("./codexRuntime", () => {
 
 import { createPipelineRun, executePipelineRun } from "./pipelineRunner";
 
+function handoff(id: string, source: string, target: string, order = 0): PipelineEdge {
+  return { id, source, target, order, mode: "automatic", approvalMessage: "" };
+}
+
 function graph(retryCount = 0): PipelineDefinition {
   const baseAgent = {
     type: "agent" as const,
@@ -98,12 +129,48 @@ function graph(retryCount = 0): PipelineDefinition {
       { id: "output", type: "output", name: "Result", position: { x: 2, y: 0 } },
     ],
     edges: [
-      { id: "i-a", source: "input", target: "reader-a", order: 0 },
-      { id: "i-b", source: "input", target: "reader-b", order: 1 },
-      { id: "i-w", source: "input", target: "writer", order: 2 },
-      { id: "a-o", source: "reader-a", target: "output", order: 0 },
-      { id: "b-o", source: "reader-b", target: "output", order: 1 },
-      { id: "w-o", source: "writer", target: "output", order: 2 },
+      handoff("i-a", "input", "reader-a", 0),
+      handoff("i-b", "input", "reader-b", 1),
+      handoff("i-w", "input", "writer", 2),
+      handoff("a-o", "reader-a", "output", 0),
+      handoff("b-o", "reader-b", "output", 1),
+      handoff("w-o", "writer", "output", 2),
+    ],
+  };
+}
+
+function approvalGraph(): PipelineDefinition {
+  return {
+    schemaVersion: 1,
+    id: "approval-pipeline",
+    name: "Guarded build",
+    viewport: { x: 0, y: 0, zoom: 1 },
+    nodes: [
+      { id: "input", type: "input", name: "Task", position: { x: 0, y: 0 } },
+      {
+        id: "builder",
+        type: "agent",
+        name: "Builder",
+        position: { x: 1, y: 0 },
+        instructions: "Implement the task.",
+        model: "gpt-test",
+        effort: "medium",
+        permission: "workspace-write",
+        retryCount: 0,
+        color: "purple",
+      },
+      { id: "output", type: "output", name: "Result", position: { x: 2, y: 0 } },
+    ],
+    edges: [
+      handoff("input-builder", "input", "builder"),
+      {
+        id: "builder-output",
+        source: "builder",
+        target: "output",
+        order: 0,
+        mode: "approval",
+        approvalMessage: "Review the implementation before release.",
+      },
     ],
   };
 }
@@ -118,6 +185,7 @@ beforeEach(() => {
   runtime.failFirstFor.clear();
   runtime.alwaysFailFor.clear();
   runtime.cleanupOnAbortFor.clear();
+  runtime.gitCalls = [];
 });
 
 describe("pipeline runner", () => {
@@ -134,6 +202,7 @@ describe("pipeline runner", () => {
       callbacks: {
         onRunStatus: () => undefined,
         onNodePatch: (id, patch) => { states[id] = { ...states[id], ...patch }; },
+        onEdgePatch: () => undefined,
         onThreadOwned: () => undefined,
         onTurnOwned: () => undefined,
         onAttemptSettled: () => undefined,
@@ -163,6 +232,7 @@ describe("pipeline runner", () => {
       callbacks: {
         onRunStatus: () => undefined,
         onNodePatch: () => undefined,
+        onEdgePatch: () => undefined,
         onThreadOwned: () => undefined,
         onTurnOwned: () => undefined,
         onAttemptSettled: () => undefined,
@@ -184,6 +254,7 @@ describe("pipeline runner", () => {
       callbacks: {
         onRunStatus: () => undefined,
         onNodePatch: () => undefined,
+        onEdgePatch: () => undefined,
         onThreadOwned: () => undefined,
         onTurnOwned: () => undefined,
         onAttemptSettled: () => undefined,
@@ -205,6 +276,7 @@ describe("pipeline runner", () => {
       callbacks: {
         onRunStatus: () => undefined,
         onNodePatch: () => undefined,
+        onEdgePatch: () => undefined,
         onThreadOwned: () => undefined,
         onTurnOwned: () => undefined,
         onAttemptSettled: () => undefined,
@@ -225,5 +297,116 @@ describe("pipeline runner", () => {
     definition.edges.length = 0;
     expect(run.definition.nodes[1].name).toBe("Reader A");
     expect(run.definition.edges).toHaveLength(6);
+  });
+
+  it("runs a Git integration as a deterministic commit and push step", async () => {
+    const definition = graph();
+    definition.nodes.splice(-1, 0, {
+      id: "git",
+      type: "integration",
+      name: "Commit & push",
+      position: { x: 2, y: 2 },
+      provider: "git",
+      action: "commit-push",
+      stageAll: true,
+      commitMessage: "feat: {{task}}",
+      color: "orange",
+    });
+    definition.edges.push(
+      handoff("w-g", "writer", "git"),
+      handoff("g-o", "git", "output", 3),
+    );
+    const run = createPipelineRun(definition, "/project", "# Reusable tasks\n\nBuild the queue");
+    const controller = new AbortController();
+    const states: Record<string, Partial<PipelineNodeRunState>> = {};
+    const output = await executePipelineRun(run, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      callbacks: {
+        onRunStatus: () => undefined,
+        onNodePatch: (id, patch) => { states[id] = { ...states[id], ...patch }; },
+        onEdgePatch: () => undefined,
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    });
+
+    expect(runtime.gitCalls).toEqual([
+      "stage",
+      "commit:feat: Reusable tasks",
+      "push",
+      "status",
+    ]);
+    expect(states.git?.status).toBe("completed");
+    expect(output).toContain("Pushed feature/tasks");
+  });
+
+  it("pauses on an approval connection before starting its target", async () => {
+    const definition = approvalGraph();
+    const run = createPipelineRun(definition, "/project", "Ship safely");
+    const controller = new AbortController();
+    const states: Record<string, Partial<PipelineNodeRunState>> = {};
+    const edgeStates: Record<string, Partial<PipelineEdgeRunState>> = {};
+    const statuses: PipelineRunStatus[] = [];
+    let decide: ((decision: PipelineApprovalDecision) => void) | undefined;
+    const execution = executePipelineRun(run, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      requestConnectionApproval: () => new Promise((resolve) => { decide = resolve; }),
+      callbacks: {
+        onRunStatus: (status) => { statuses.push(status); },
+        onNodePatch: (id, patch) => { states[id] = { ...states[id], ...patch }; },
+        onEdgePatch: (id, patch) => { edgeStates[id] = { ...edgeStates[id], ...patch }; },
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    });
+
+    await vi.waitFor(() => expect(edgeStates["builder-output"]?.status).toBe("waitingForApproval"));
+    expect(statuses.at(-1)).toBe("needsAttention");
+    expect(states.output?.status).toBeUndefined();
+    decide?.("approved");
+    const output = await execution;
+
+    expect(edgeStates["builder-output"]?.status).toBe("approved");
+    expect(states.output?.status).toBe("completed");
+    expect(output).toBe("result from Builder");
+    expect(statuses.at(-1)).toBe("completed");
+  });
+
+  it("rejects an approval connection and never starts its target", async () => {
+    const run = createPipelineRun(approvalGraph(), "/project", "Do not ship yet");
+    const controller = new AbortController();
+    const states: Record<string, Partial<PipelineNodeRunState>> = {};
+    const edgeStates: Record<string, Partial<PipelineEdgeRunState>> = {};
+    await expect(executePipelineRun(run, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      requestConnectionApproval: async () => "rejected",
+      callbacks: {
+        onRunStatus: () => undefined,
+        onNodePatch: (id, patch) => { states[id] = { ...states[id], ...patch }; },
+        onEdgePatch: (id, patch) => { edgeStates[id] = { ...edgeStates[id], ...patch }; },
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    })).rejects.toThrow("Approval rejected between Builder and Result.");
+    expect(edgeStates["builder-output"]).toMatchObject({
+      status: "rejected",
+      error: "Approval rejected between Builder and Result.",
+    });
+    expect(states.output?.status).toBeUndefined();
   });
 });

@@ -29,8 +29,8 @@ const nodes: PipelineNode[] = [
 ];
 
 const edges: PipelineEdge[] = [
-  { id: "a", source: "input", target: "agent", order: 0 },
-  { id: "b", source: "agent", target: "output", order: 0 },
+  { id: "a", source: "input", target: "agent", order: 0, mode: "automatic", approvalMessage: "" },
+  { id: "b", source: "agent", target: "output", order: 0, mode: "automatic", approvalMessage: "" },
 ];
 
 describe("pipeline canvas geometry", () => {
