@@ -1,6 +1,6 @@
 import { useAgentState } from "../agents/agentStore";
 import { gitCommit, gitPush, gitStageAll, gitStatus } from "../../bridge/tauri";
-import { buildTopologicalLayers, orderedIncomingEdges, validatePipelineGraph } from "./graph";
+import { orderedIncomingEdges, validatePipelineGraph } from "./graph";
 import { composePipelinePrompt } from "./prompt";
 import { executePipelineAgent, PipelineTurnCleanupError } from "./codexRuntime";
 import { newPipelineId } from "./pipelinePersistence";
@@ -181,6 +181,70 @@ function isAbort(error: unknown, signal: AbortSignal): boolean {
 
 function isAbortException(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function preferredFailure(results: PromiseSettledResult<void>[]): unknown | null {
+  const failures = results.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  return failures.find(
+    (result) => result.reason instanceof PipelineTurnCleanupError,
+  )?.reason ?? failures.find(
+    (result) => !isAbortException(result.reason),
+  )?.reason ?? failures[0]?.reason ?? null;
+}
+
+type PipelineAccessMode = "read" | "exclusive";
+
+interface PipelineAccessRequest {
+  mode: PipelineAccessMode;
+  run: () => Promise<void>;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+}
+
+/**
+ * Run read-only Codex work concurrently while keeping every workspace writer
+ * and deterministic integration exclusive. Queued writers are fair: later
+ * readers do not continually jump ahead of them.
+ */
+function createPipelineAccessScheduler() {
+  const queue: PipelineAccessRequest[] = [];
+  let activeReaders = 0;
+  let activeExclusive = false;
+
+  const settle = (request: PipelineAccessRequest) => {
+    void request.run().then(request.resolve, request.reject).finally(() => {
+      if (request.mode === "read") activeReaders -= 1;
+      else activeExclusive = false;
+      pump();
+    });
+  };
+
+  const pump = () => {
+    if (activeExclusive || !queue.length) return;
+    if (queue[0].mode === "exclusive") {
+      if (activeReaders > 0) return;
+      activeExclusive = true;
+      settle(queue.shift()!);
+      return;
+    }
+    while (queue[0]?.mode === "read" && !activeExclusive) {
+      activeReaders += 1;
+      settle(queue.shift()!);
+    }
+  };
+
+  return (mode: PipelineAccessMode, run: () => Promise<void>): Promise<void> =>
+    new Promise((resolve, reject) => {
+      queue.push({ mode, run, resolve, reject });
+      pump();
+    });
+}
+
+function createPipelineApprovalScheduler() {
+  const schedule = createPipelineAccessScheduler();
+  return (run: () => Promise<void>) => schedule("exclusive", run);
 }
 
 function outputForJoin(
@@ -415,34 +479,6 @@ async function runApprovalConnection(
   }
 }
 
-async function runExclusiveLayer(
-  run: PipelineRun,
-  nodes: PipelineAgentNode[],
-  outputs: Map<string, string>,
-  options: PipelineRunnerOptions,
-): Promise<void> {
-  const readers = nodes.filter((node) => node.permission === "read-only");
-  const writers = nodes.filter((node) => node.permission !== "read-only");
-  const readerResults = await Promise.allSettled(readers.map(async (node) => {
-    try {
-      await runAgent(run, node, outputs, options);
-    } catch (error) {
-      if (!isAbort(error, options.signal)) options.abortPeers(error);
-      throw error;
-    }
-  }));
-  const readerFailures = readerResults.filter(
-    (result): result is PromiseRejectedResult => result.status === "rejected",
-  );
-  const readerFailure = readerFailures.find(
-    (result) => result.reason instanceof PipelineTurnCleanupError,
-  ) ?? readerFailures.find(
-    (result) => !isAbortException(result.reason),
-  ) ?? readerFailures[0];
-  if (readerFailure) throw readerFailure.reason;
-  for (const writer of writers) await runAgent(run, writer, outputs, options);
-}
-
 export async function executePipelineRun(
   run: PipelineRun,
   options: PipelineRunnerOptions,
@@ -451,12 +487,13 @@ export async function executePipelineRun(
   callbacks.onRunStatus("validating");
   const validation = validatePipelineGraph(run.definition);
   if (!validation.valid) throw new Error(validation.issues.map((issue) => issue.message).join(" "));
-  const layers = validation.layers ?? buildTopologicalLayers(run.definition);
-  if (!layers) throw new Error("Pipeline contains a cycle");
 
   callbacks.onRunStatus("running");
   const nodes = new Map(run.definition.nodes.map((node) => [node.id, node]));
   const outputs = new Map<string, string>();
+  const executions = new Map<string, Promise<void>>();
+  const scheduleAccess = createPipelineAccessScheduler();
+  const scheduleApproval = createPipelineApprovalScheduler();
   const inputNode = run.definition.nodes.find((node) => node.type === "input")!;
   outputs.set(inputNode.id, run.input);
   callbacks.onNodePatch(inputNode.id, {
@@ -466,42 +503,61 @@ export async function executePipelineRun(
     completedAt: Date.now(),
   });
 
-  for (const layer of layers) {
-    const layerNodes = layer.map((id) => nodes.get(id)!).filter(Boolean);
-    const approvalConnections = layerNodes.flatMap((node) =>
-      orderedIncomingEdges(run.definition, node.id).filter((edge) => edge.mode === "approval")
-    );
-    const agents = layerNodes.filter((node): node is PipelineAgentNode => node.type === "agent");
-    const integrations = layerNodes.filter(
-      (node): node is PipelineIntegrationNode => node.type === "integration",
-    );
-    const approvals = layerNodes.filter(
-      (node): node is PipelineApprovalNode => node.type === "approval",
-    );
-    for (const edge of approvalConnections) {
-      const source = nodes.get(edge.source);
-      const target = nodes.get(edge.target);
-      if (source && target) await runApprovalConnection(edge, source, target, options);
-    }
-    for (const agent of agents) callbacks.onNodePatch(agent.id, { status: "ready" });
-    for (const integration of integrations) callbacks.onNodePatch(integration.id, { status: "ready" });
-    for (const approval of approvals) callbacks.onNodePatch(approval.id, { status: "ready" });
-    await runExclusiveLayer(run, agents, outputs, options);
-    for (const integration of integrations) await runIntegration(run, integration, outputs, options);
-    for (const approval of approvals) await runApproval(run, approval, outputs, options);
-    for (const outputNode of layerNodes.filter((node) => node.type === "output")) {
-      const output = outputForJoin(run.definition, outputNode.id, outputs);
-      outputs.set(outputNode.id, output);
-      callbacks.onNodePatch(outputNode.id, {
-        status: "completed",
-        output,
-        startedAt: Date.now(),
-        completedAt: Date.now(),
-      });
-    }
-  }
-
   const outputNode = run.definition.nodes.find((node) => node.type === "output")!;
+  executions.set(inputNode.id, Promise.resolve());
+
+  const executeNode = (nodeId: string): Promise<void> => {
+    const existing = executions.get(nodeId);
+    if (existing) return existing;
+    const node = nodes.get(nodeId);
+    if (!node) return Promise.reject(new Error(`Pipeline node ${nodeId} is missing.`));
+    const incoming = orderedIncomingEdges(run.definition, nodeId);
+    const dependencies = incoming.map((edge) => executeNode(edge.source));
+    const execution = Promise.allSettled(dependencies).then(async (results) => {
+      const failure = preferredFailure(results);
+      if (failure) throw failure;
+      if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
+
+      for (const edge of incoming.filter((candidate) => candidate.mode === "approval")) {
+        const source = nodes.get(edge.source);
+        if (source) {
+          await scheduleApproval(() => runApprovalConnection(edge, source, node, options));
+        }
+      }
+
+      try {
+        if (node.type === "agent") {
+          callbacks.onNodePatch(node.id, { status: "ready" });
+          await scheduleAccess(
+            node.permission === "read-only" ? "read" : "exclusive",
+            () => runAgent(run, node, outputs, options),
+          );
+        } else if (node.type === "integration") {
+          callbacks.onNodePatch(node.id, { status: "ready" });
+          await scheduleAccess("exclusive", () => runIntegration(run, node, outputs, options));
+        } else if (node.type === "approval") {
+          callbacks.onNodePatch(node.id, { status: "ready" });
+          await scheduleApproval(() => runApproval(run, node, outputs, options));
+        } else if (node.type === "output") {
+          const output = outputForJoin(run.definition, node.id, outputs);
+          outputs.set(node.id, output);
+          callbacks.onNodePatch(node.id, {
+            status: "completed",
+            output,
+            startedAt: Date.now(),
+            completedAt: Date.now(),
+          });
+        }
+      } catch (error) {
+        if (!isAbort(error, options.signal)) options.abortPeers(error);
+        throw error;
+      }
+    });
+    executions.set(nodeId, execution);
+    return execution;
+  };
+
+  await executeNode(outputNode.id);
   const result = outputs.get(outputNode.id) ?? "";
   callbacks.onRunStatus("completed", null, result);
   return result;

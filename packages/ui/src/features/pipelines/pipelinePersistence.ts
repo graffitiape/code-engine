@@ -3,7 +3,6 @@ import {
   PIPELINE_MAX_NODES,
   PIPELINE_SCHEMA_VERSION,
   type PipelineApprovalNode,
-  type PipelineAgentNode,
   type PipelineDefinition,
   type PipelineEdge,
   type PipelineIntegrationAction,
@@ -25,89 +24,28 @@ export function newPipelineId(prefix: string): string {
   return `${prefix}:${suffix}`;
 }
 
-function starterAgent(
-  name: string,
-  x: number,
-  instructions: string,
-  model: string,
-  effort: string,
-  permission: PipelinePermission,
-  color: string,
-): PipelineAgentNode {
-  return {
-    id: newPipelineId("node"),
-    type: "agent",
-    name,
-    position: { x, y: 220 },
-    instructions,
-    model,
-    effort,
-    permission,
-    retryCount: 1,
-    color,
-  };
-}
-
 export function createStarterPipeline(
   name = "Development pipeline",
-  model = "",
-  effort = "medium",
 ): PipelineDefinition {
   const input: PipelineNode = {
     id: newPipelineId("node"),
     type: "input",
-    name: "Task input",
+    name: "Task Input",
     position: { x: 80, y: 220 },
   };
-  const research = starterAgent(
-    "Researcher",
-    340,
-    "Inspect the project and task. Identify relevant files, constraints, risks, and a concrete implementation plan. Do not modify files.",
-    model,
-    effort,
-    "read-only",
-    "cyan",
-  );
-  const builder = starterAgent(
-    "Builder",
-    620,
-    "Implement the task completely in the active project. Use the upstream research as context, preserve existing work, and verify your changes.",
-    model,
-    effort,
-    "workspace-write",
-    "purple",
-  );
-  const reviewer = starterAgent(
-    "Reviewer",
-    900,
-    "Review the implementation against the original task and upstream handoffs. Run focused checks, fix only when permitted, and give a clear final result.",
-    model,
-    effort,
-    "read-only",
-    "green",
-  );
   const output: PipelineNode = {
     id: newPipelineId("node"),
     type: "output",
     name: "Result",
     position: { x: 1180, y: 220 },
   };
-  const nodes = [input, research, builder, reviewer, output];
-  const edges: PipelineEdge[] = nodes.slice(0, -1).map((node, index) => ({
-    id: newPipelineId("edge"),
-    source: node.id,
-    target: nodes[index + 1].id,
-    order: index,
-    mode: "automatic",
-    approvalMessage: "",
-  }));
   return {
     schemaVersion: PIPELINE_SCHEMA_VERSION,
     id: newPipelineId("pipeline"),
     name,
     viewport: { x: 24, y: 70, zoom: 0.55 },
-    nodes,
-    edges,
+    nodes: [input, output],
+    edges: [],
   };
 }
 

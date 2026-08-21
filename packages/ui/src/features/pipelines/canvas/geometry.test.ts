@@ -49,6 +49,14 @@ describe("pipeline canvas geometry", () => {
     expect(pipelinePortPoint(nodes[1], "output")).toEqual({ x: 584, y: 152 });
   });
 
+  it("distributes fan-in anchors vertically in stable slot order", () => {
+    expect(pipelinePortPoint(nodes[1], "input", 0, 3)).toEqual({ x: 320, y: 92 });
+    expect(pipelinePortPoint(nodes[1], "input", 1, 3)).toEqual({ x: 320, y: 152 });
+    expect(pipelinePortPoint(nodes[1], "input", 2, 3)).toEqual({ x: 320, y: 212 });
+    expect(pipelinePortPoint(nodes[2], "input", 0, 3)).toEqual({ x: 680, y: 122 });
+    expect(pipelinePortPoint(nodes[2], "input", 2, 3)).toEqual({ x: 680, y: 178 });
+  });
+
   it("detects only connections that close a directed cycle", () => {
     expect(connectionWouldCycle(edges, "output", "input")).toBe(true);
     expect(connectionWouldCycle(edges, "input", "output")).toBe(false);

@@ -79,9 +79,9 @@ export function PipelineTemplateWorkspace(props: PipelineTemplateWorkspaceProps)
             selectedId={state.selectedId}
             disabled={props.active}
             onSelect={selectPipeline}
-            onCreate={() => createPipeline(agents.model, agents.effort || "medium")}
+            onCreate={createPipeline}
             onDuplicate={duplicateSelectedPipeline}
-            onDelete={() => deleteSelectedPipeline(agents.model, agents.effort || "medium")}
+            onDelete={deleteSelectedPipeline}
           />
 
           <section class="pipeline-workspace">

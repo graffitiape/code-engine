@@ -13,8 +13,10 @@ const runtime = vi.hoisted(() => ({
   maxReaders: 0,
   writerOverlap: false,
   calls: [] as string[],
+  completed: [] as string[],
   prompts: [] as string[],
   attempts: new Map<string, number>(),
+  delays: new Map<string, number>(),
   failFirstFor: new Set<string>(),
   alwaysFailFor: new Set<string>(),
   cleanupOnAbortFor: new Set<string>(),
@@ -75,7 +77,7 @@ vi.mock("./codexRuntime", () => {
       runtime.maxReaders = Math.max(runtime.maxReaders, runtime.activeReaders);
       try {
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, 5);
+          const timer = setTimeout(resolve, runtime.delays.get(request.node.id) ?? 5);
           const abort = () => {
             clearTimeout(timer);
             reject(runtime.cleanupOnAbortFor.has(request.node.id)
@@ -91,6 +93,7 @@ vi.mock("./codexRuntime", () => {
     } else {
       runtime.writerOverlap ||= runtime.activeReaders > 0;
     }
+    runtime.completed.push(request.node.id);
     return {
       threadId: `thread-${request.node.id}-${count}`,
       turnId: `turn-${count}`,
@@ -175,13 +178,51 @@ function approvalGraph(): PipelineDefinition {
   };
 }
 
+function dependencyDrivenGraph(joinSlowBranch = false): PipelineDefinition {
+  const agent = (id: string, name: string, x: number, y: number) => ({
+    id,
+    type: "agent" as const,
+    name,
+    position: { x, y },
+    instructions: "Complete this stage.",
+    model: "gpt-test",
+    effort: "medium",
+    permission: "read-only" as const,
+    retryCount: 0,
+    color: "cyan",
+  });
+  return {
+    schemaVersion: 1,
+    id: "dependency-pipeline",
+    name: "Dependency-driven execution",
+    viewport: { x: 0, y: 0, zoom: 1 },
+    nodes: [
+      { id: "input", type: "input", name: "Task", position: { x: 0, y: 0 } },
+      agent("fast", "Fast branch", 1, 0),
+      agent("slow", "Slow branch", 1, 1),
+      agent("dependent", "Dependent", 2, 0),
+      { id: "output", type: "output", name: "Result", position: { x: 3, y: 0 } },
+    ],
+    edges: [
+      handoff("input-fast", "input", "fast"),
+      handoff("input-slow", "input", "slow"),
+      handoff("fast-dependent", "fast", "dependent", 0),
+      ...(joinSlowBranch ? [handoff("slow-dependent", "slow", "dependent", 1)] : []),
+      handoff("dependent-output", "dependent", "output", 0),
+      ...(!joinSlowBranch ? [handoff("slow-output", "slow", "output", 1)] : []),
+    ],
+  };
+}
+
 beforeEach(() => {
   runtime.activeReaders = 0;
   runtime.maxReaders = 0;
   runtime.writerOverlap = false;
   runtime.calls = [];
+  runtime.completed = [];
   runtime.prompts = [];
   runtime.attempts.clear();
+  runtime.delays.clear();
   runtime.failFirstFor.clear();
   runtime.alwaysFailFor.clear();
   runtime.cleanupOnAbortFor.clear();
@@ -189,6 +230,69 @@ beforeEach(() => {
 });
 
 describe("pipeline runner", () => {
+  it("starts a downstream reader as soon as its own dependencies complete", async () => {
+    runtime.delays.set("fast", 1);
+    runtime.delays.set("slow", 30);
+    runtime.delays.set("dependent", 1);
+    const run = createPipelineRun(dependencyDrivenGraph(), "/project", "Run independently");
+    const controller = new AbortController();
+
+    await executePipelineRun(run, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      callbacks: {
+        onRunStatus: () => undefined,
+        onNodePatch: () => undefined,
+        onEdgePatch: () => undefined,
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    });
+
+    expect(runtime.completed.indexOf("dependent")).toBeLessThan(
+      runtime.completed.indexOf("slow"),
+    );
+  });
+
+  it("waits for every fan-in dependency and merges their handoffs in wire order", async () => {
+    runtime.delays.set("fast", 1);
+    runtime.delays.set("slow", 15);
+    const run = createPipelineRun(
+      dependencyDrivenGraph(true),
+      "/project",
+      "Join both branches",
+    );
+    const controller = new AbortController();
+
+    await executePipelineRun(run, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      callbacks: {
+        onRunStatus: () => undefined,
+        onNodePatch: () => undefined,
+        onEdgePatch: () => undefined,
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    });
+
+    expect(runtime.completed.indexOf("dependent")).toBeGreaterThan(
+      runtime.completed.indexOf("slow"),
+    );
+    const prompt = runtime.prompts.find((entry) => entry.includes('"nodeId": "dependent"'))!;
+    expect(prompt.indexOf('"nodeName": "Fast branch"')).toBeLessThan(
+      prompt.indexOf('"nodeName": "Slow branch"'),
+    );
+  });
+
   it("runs read-only siblings concurrently and writers exclusively", async () => {
     const definition = graph();
     const run = createPipelineRun(definition, "/project", "Build the feature");

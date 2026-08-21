@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   createStarterPipeline,
   loadPipelines,
+  newPipelineId,
   savePipelines,
 } from "./pipelinePersistence";
+import type { PipelineDefinition } from "./types";
 
 const values = new Map<string, string>();
 
@@ -20,9 +22,56 @@ beforeEach(() => {
   });
 });
 
+function addAgentStep(pipeline: PipelineDefinition) {
+  const input = pipeline.nodes.find((node) => node.type === "input")!;
+  const output = pipeline.nodes.find((node) => node.type === "output")!;
+  const agent = {
+    id: newPipelineId("node"),
+    type: "agent" as const,
+    name: "Builder",
+    position: { x: 620, y: 220 },
+    instructions: "Implement the task.",
+    model: "gpt-test",
+    effort: "medium",
+    permission: "workspace-write" as const,
+    retryCount: 1,
+    color: "purple",
+  };
+  pipeline.nodes.splice(1, 0, agent);
+  pipeline.edges = [
+    {
+      id: newPipelineId("edge"),
+      source: input.id,
+      target: agent.id,
+      order: 0,
+      mode: "automatic",
+      approvalMessage: "",
+    },
+    {
+      id: newPipelineId("edge"),
+      source: agent.id,
+      target: output.id,
+      order: 0,
+      mode: "automatic",
+      approvalMessage: "",
+    },
+  ];
+}
+
 describe("pipeline persistence", () => {
+  it("creates an empty pipeline with only its terminal nodes", () => {
+    const pipeline = createStarterPipeline("Empty pipeline");
+
+    expect(pipeline.nodes.map(({ type, name }) => ({ type, name }))).toEqual([
+      { type: "input", name: "Task Input" },
+      { type: "output", name: "Result" },
+    ]);
+    expect(pipeline.edges).toEqual([]);
+  });
+
   it("round-trips approval connections with their reviewer message", () => {
-    const pipeline = createStarterPipeline("Guarded pipeline", "gpt-test", "medium");
+    const pipeline = createStarterPipeline("Guarded pipeline");
+    addAgentStep(pipeline);
     const approval = pipeline.edges.at(-1)!;
     approval.mode = "approval";
     approval.approvalMessage = "Check the implementation and tests before continuing.";
@@ -36,7 +85,8 @@ describe("pipeline persistence", () => {
   });
 
   it("loads legacy connections as automatic handoffs", () => {
-    const pipeline = createStarterPipeline("Legacy pipeline", "gpt-test", "medium");
+    const pipeline = createStarterPipeline("Legacy pipeline");
+    addAgentStep(pipeline);
     const legacy = JSON.parse(JSON.stringify(pipeline)) as Record<string, unknown>;
     for (const edge of legacy.edges as Array<Record<string, unknown>>) {
       delete edge.mode;
@@ -54,7 +104,8 @@ describe("pipeline persistence", () => {
   });
 
   it("migrates a simple legacy approval node into an approval connection", () => {
-    const pipeline = createStarterPipeline("Legacy approval", "gpt-test", "medium");
+    const pipeline = createStarterPipeline("Legacy approval");
+    addAgentStep(pipeline);
     const output = pipeline.nodes.find((node) => node.type === "output")!;
     const previous = pipeline.edges.find((edge) => edge.target === output.id)!;
     pipeline.nodes.splice(-1, 0, {

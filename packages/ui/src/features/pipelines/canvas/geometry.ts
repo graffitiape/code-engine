@@ -25,11 +25,19 @@ export function pipelineNodeSize(node: PipelineNode): PipelineNodeSize {
 export function pipelinePortPoint(
   node: PipelineNode,
   port: "input" | "output",
+  slotIndex = 0,
+  slotCount = 1,
 ): PipelinePoint {
   const size = pipelineNodeSize(node);
+  const count = Math.max(1, Math.floor(slotCount));
+  const index = Math.min(count - 1, Math.max(0, Math.floor(slotIndex)));
+  const inset = Math.min(32, size.height * 0.22);
+  const offsetY = count === 1
+    ? size.height / 2
+    : inset + index * ((size.height - inset * 2) / (count - 1));
   return {
     x: node.position.x + (port === "output" ? size.width : 0),
-    y: node.position.y + size.height / 2,
+    y: node.position.y + offsetY,
   };
 }
 

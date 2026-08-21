@@ -128,6 +128,18 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
     }
     return counts;
   });
+  const joinReadyCounts = createMemo(() => {
+    const counts = new Map<string, number>();
+    for (const edge of props.edges) {
+      const sourceReady = props.runStates[edge.source]?.status === "completed";
+      const approvalReady = edge.mode === "automatic" ||
+        props.edgeRunStates[edge.id]?.status === "approved";
+      if (sourceReady && approvalReady) {
+        counts.set(edge.target, (counts.get(edge.target) ?? 0) + 1);
+      }
+    }
+    return counts;
+  });
 
   const worldStyle = (): JSX.CSSProperties => ({
     transform: `translate(${props.viewport.x}px, ${props.viewport.y}px) scale(${zoom()})`,
@@ -538,6 +550,9 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
                 connectionSource={props.connectionSource}
                 readOnly={props.readOnly}
                 incomingCount={incomingCounts().get(node.id) ?? 0}
+                joinReadyCount={props.runStates[node.id]
+                  ? joinReadyCounts().get(node.id) ?? 0
+                  : undefined}
                 outgoingCount={outgoingCounts().get(node.id) ?? 0}
                 onSelect={selectNode}
                 onMovePreview={(nodeId, position) =>

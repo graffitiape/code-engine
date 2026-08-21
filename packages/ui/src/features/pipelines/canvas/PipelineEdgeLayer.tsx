@@ -9,7 +9,7 @@ import type {
 } from "../types";
 import {
   pipelineEdgePath,
-  pipelineNodeSize,
+  pipelinePortPoint,
   pointInViewport,
 } from "./geometry";
 import { pipelineRunTone, type PipelineRunTone } from "./runState";
@@ -34,6 +34,12 @@ interface EdgePoints {
   to: PipelinePoint;
   source: PipelineNode;
   target: PipelineNode;
+  targetSlot: number;
+  targetSlotCount: number;
+}
+
+function compareIds(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function edgeTone(
@@ -70,23 +76,38 @@ function edgeStatusLabel(tone: PipelineRunTone): string {
 export function PipelineEdgeLayer(props: PipelineEdgeLayerProps) {
   const markerPrefix = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "");
   const nodeMap = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])));
-  const outgoingCounts = createMemo(() => {
-    const counts = new Map<string, number>();
-    for (const edge of props.edges) counts.set(edge.source, (counts.get(edge.source) ?? 0) + 1);
-    return counts;
+  const incomingSlots = createMemo(() => {
+    const byTarget = new Map<string, PipelineEdge[]>();
+    for (const edge of props.edges) {
+      const incoming = byTarget.get(edge.target) ?? [];
+      incoming.push(edge);
+      byTarget.set(edge.target, incoming);
+    }
+    const slots = new Map<string, { index: number; count: number }>();
+    for (const incoming of byTarget.values()) {
+      incoming.sort(
+        (left, right) =>
+          left.order - right.order ||
+          compareIds(left.source, right.source) ||
+          compareIds(left.id, right.id),
+      );
+      incoming.forEach((edge, index) => slots.set(edge.id, { index, count: incoming.length }));
+    }
+    return slots;
   });
 
   const nodePosition = (node: PipelineNode): PipelinePoint =>
     props.positions[node.id] ?? node.position;
 
-  const portPoint = (node: PipelineNode, port: "input" | "output"): PipelinePoint => {
+  const portPoint = (
+    node: PipelineNode,
+    port: "input" | "output",
+    slotIndex = 0,
+    slotCount = 1,
+  ): PipelinePoint => {
     const position = nodePosition(node);
-    const size = pipelineNodeSize(node);
     return pointInViewport(
-      {
-        x: position.x + (port === "output" ? size.width : 0),
-        y: position.y + size.height / 2,
-      },
+      pipelinePortPoint({ ...node, position }, port, slotIndex, slotCount),
       props.viewport,
     );
   };
@@ -95,11 +116,14 @@ export function PipelineEdgeLayer(props: PipelineEdgeLayerProps) {
     const source = nodeMap().get(edge.source);
     const target = nodeMap().get(edge.target);
     if (!source || !target) return null;
+    const targetSlot = incomingSlots().get(edge.id) ?? { index: 0, count: 1 };
     return {
       from: portPoint(source, "output"),
-      to: portPoint(target, "input"),
+      to: portPoint(target, "input", targetSlot.index, targetSlot.count),
       source,
       target,
+      targetSlot: targetSlot.index,
+      targetSlotCount: targetSlot.count,
     };
   };
 
@@ -170,14 +194,27 @@ export function PipelineEdgeLayer(props: PipelineEdgeLayerProps) {
               const tone = () => edgeTone(edge, props.runStates, props.edgeRunStates);
               const path = () => pipelineEdgePath(points().from, points().to);
               const selected = () => props.selectedEdgeId === edge.id;
-              const label = () =>
-                `${points().source.name} to ${points().target.name}, ${edge.mode === "approval" ? "approval connection" : "automatic connection"}, ${edgeStatusLabel(tone())}`;
+              const label = () => {
+                const input = points().targetSlotCount > 1
+                  ? `, input ${points().targetSlot + 1} of ${points().targetSlotCount}`
+                  : "";
+                return `${points().source.name} to ${points().target.name}${input}, ${edge.mode === "approval" ? "approval connection" : "automatic connection"}, ${edgeStatusLabel(tone())}`;
+              };
               const midpoint = () => ({
                 x: (points().from.x + points().to.x) / 2,
                 y: (points().from.y + points().to.y) / 2,
               });
               return (
                 <g class={`pipeline-edge mode-${edge.mode} tone-${tone()} ${selected() ? "selected" : ""}`}>
+                  <Show when={points().targetSlotCount > 1}>
+                    <circle
+                      class="pipeline-edge-join-anchor"
+                      cx={points().to.x}
+                      cy={points().to.y}
+                      r="4"
+                      aria-hidden="true"
+                    />
+                  </Show>
                   <path
                     class="pipeline-edge-visible"
                     d={path()}
@@ -221,7 +258,7 @@ export function PipelineEdgeLayer(props: PipelineEdgeLayerProps) {
                       <text text-anchor="middle" dominant-baseline="central">GATE</text>
                     </g>
                   </Show>
-                  <Show when={(outgoingCounts().get(edge.source) ?? 0) > 1}>
+                  <Show when={points().targetSlotCount > 1}>
                     <text
                       class="pipeline-edge-order"
                       x={midpoint().x}

@@ -47,7 +47,7 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
     agents.account?.account,
   );
   createEffect(() => {
-    initializePipelines(workspace.activeRoot(), agents.model, agents.effort || "medium");
+    initializePipelines(workspace.activeRoot());
   });
 
   createEffect(() => {

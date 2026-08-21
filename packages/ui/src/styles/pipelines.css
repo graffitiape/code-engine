@@ -331,6 +331,12 @@
   text-transform: uppercase;
 }
 
+.pipeline-node-join-progress {
+  color: var(--blue);
+  font-weight: 700;
+}
+.pipeline-node-join-progress.complete { color: var(--green); }
+
 .pipeline-node-input,
 .pipeline-node-output {
   gap: 4px;
@@ -461,6 +467,20 @@
   font: 8px var(--font-mono);
   pointer-events: none;
 }
+
+.pipeline-edge-join-anchor {
+  fill: var(--bg-0);
+  stroke: var(--border-strong);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.pipeline-edge.tone-ready .pipeline-edge-join-anchor { stroke: var(--blue); }
+.pipeline-edge.tone-active .pipeline-edge-join-anchor { stroke: var(--cyan); }
+.pipeline-edge.tone-attention .pipeline-edge-join-anchor { stroke: var(--yellow); }
+.pipeline-edge.tone-success .pipeline-edge-join-anchor { stroke: var(--green); }
+.pipeline-edge.tone-failed .pipeline-edge-join-anchor { stroke: var(--red); }
+.pipeline-edge.tone-cancelled .pipeline-edge-join-anchor { stroke: var(--fg-3); }
 
 .pipeline-edge-preview {
   stroke: var(--cyan);

@@ -23,6 +23,7 @@ export interface PipelineNodeCardProps {
   connectionSource: string | null;
   readOnly?: boolean;
   incomingCount: number;
+  joinReadyCount?: number;
   outgoingCount: number;
   onSelect: (nodeId: string) => void;
   onMovePreview: (nodeId: string, position: PipelinePoint | null) => void;
@@ -106,7 +107,10 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
   const ariaLabel = () => {
     const selection = props.selected ? "Selected. " : "";
     const lock = locked() ? "Position locked. " : "Use arrow keys to move. ";
-    return `${selection}${nodeKindLabel(props.node)} ${props.node.name}. ${statusLabel()}. ${props.incomingCount} incoming and ${props.outgoingCount} outgoing connections. ${lock}`;
+    const join = props.incomingCount > 1 && props.joinReadyCount !== undefined
+      ? `${props.joinReadyCount} of ${props.incomingCount} inputs ready. `
+      : "";
+    return `${selection}${nodeKindLabel(props.node)} ${props.node.name}. ${statusLabel()}. ${props.incomingCount} incoming and ${props.outgoingCount} outgoing connections. ${join}${lock}`;
   };
 
   const clearDrag = () => {
@@ -321,6 +325,19 @@ export function PipelineNodeCard(props: PipelineNodeCardProps) {
 
       <footer class="pipeline-node-foot">
         <span>{props.incomingCount} in</span>
+        <Show when={props.incomingCount > 1}>
+          <span
+            class="pipeline-node-join-progress"
+            classList={{
+              complete: props.joinReadyCount !== undefined &&
+                props.joinReadyCount === props.incomingCount,
+            }}
+          >
+            JOIN {props.joinReadyCount === undefined
+              ? `×${props.incomingCount}`
+              : `${props.joinReadyCount}/${props.incomingCount}`}
+          </span>
+        </Show>
         <Show when={props.node.type === "agent"}>
           <span>{props.node.type === "agent" ? `${props.node.retryCount} retries` : ""}</span>
         </Show>

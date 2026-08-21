@@ -205,7 +205,7 @@ function replaceSelected(transform: (pipeline: PipelineDefinition) => PipelineDe
   persist();
 }
 
-export function initializePipelines(cwd: string | null, model = "", effort = "medium") {
+export function initializePipelines(cwd: string | null) {
   if (cwd === pipelineState.cwd) return;
   flushViewportPersistence();
   if (!cwd) {
@@ -224,7 +224,7 @@ export function initializePipelines(cwd: string | null, model = "", effort = "me
     });
     return;
   }
-  const loaded = loadPipelines(cwd, createStarterPipeline("Development pipeline", model, effort));
+  const loaded = loadPipelines(cwd, createStarterPipeline("Development pipeline"));
   const taskState = loadPipelineTasks(cwd, new Set(loaded.pipelines.map((pipeline) => pipeline.id)));
   setPipelineState({
     cwd,
@@ -249,9 +249,9 @@ export function selectPipeline(id: string) {
   persist();
 }
 
-export function createPipeline(model = "", effort = "medium") {
+export function createPipeline() {
   if (!mayEdit()) return;
-  const pipeline = createStarterPipeline(`Pipeline ${pipelineState.pipelines.length + 1}`, model, effort);
+  const pipeline = createStarterPipeline(`Pipeline ${pipelineState.pipelines.length + 1}`);
   setPipelineState("pipelines", [...pipelineState.pipelines, pipeline]);
   setPipelineState({ selectedId: pipeline.id, selectedNodeId: null, selectedEdgeId: null });
   persist();
@@ -267,12 +267,12 @@ export function duplicateSelectedPipeline() {
   persist();
 }
 
-export function deleteSelectedPipeline(model = "", effort = "medium") {
+export function deleteSelectedPipeline() {
   if (!mayEdit()) return;
   const current = selectedPipeline();
   if (!current || !window.confirm(`Delete “${current.name}”?`)) return;
   let pipelines = pipelineState.pipelines.filter((pipeline) => pipeline.id !== current.id);
-  if (!pipelines.length) pipelines = [createStarterPipeline("Development pipeline", model, effort)];
+  if (!pipelines.length) pipelines = [createStarterPipeline("Development pipeline")];
   setPipelineState("pipelines", pipelines);
   setPipelineState(
     "tasks",
