@@ -7,6 +7,7 @@ import {
   onMount,
 } from "solid-js";
 import { Icon } from "../Icon";
+import { AppLogo } from "../AppLogo";
 import {
   chooseFolder,
   removeRecentProject,
@@ -236,10 +237,7 @@ export function ProjectSwitcher() {
         onKeyDown={handleTriggerKeyDown}
       >
         <span class="logo" aria-hidden="true">
-          <svg viewBox="0 0 10 10" fill="none">
-            <path d="M2 3l3-2 3 2v4L5 9 2 7V3z" stroke="white" stroke-width="0.8" />
-            <circle cx="5" cy="5" r="1" fill="white" />
-          </svg>
+          <AppLogo />
         </span>
         <span class="name">{activeProject()?.name ?? "Open project"}</span>
         <Icon

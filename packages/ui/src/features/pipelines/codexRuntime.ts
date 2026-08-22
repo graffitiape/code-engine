@@ -13,9 +13,9 @@ import {
   subscribeCodexStatus,
   useAgentState,
 } from "../agents/agentStore";
-import { asRecord, fieldString, permissionForThread, permissionForTurn, textInput } from "../agents/types";
+import { asRecord, fieldString, localImageInput, permissionForThread, permissionForTurn, textInput } from "../agents/types";
 import { extractFinalAgentOutput } from "./prompt";
-import type { PipelineAgentNode } from "./types";
+import type { PipelineAgentNode, PipelineTaskAttachment } from "./types";
 
 const TURN_TIMEOUT_MS = 30 * 60 * 1_000;
 const INTERRUPT_RECONCILE_ATTEMPTS = 60;
@@ -33,6 +33,7 @@ export interface PipelineAgentExecution {
   pipelineName: string;
   node: PipelineAgentNode;
   prompt: string;
+  attachments: readonly PipelineTaskAttachment[];
   fallbackModel: string;
   fallbackEffort: string;
   signal: AbortSignal;
@@ -175,7 +176,7 @@ export async function executePipelineAgent(
     turnStartRequested = true;
     const turnResponse = await codexTurnStart({
       threadId,
-      input: [textInput(request.prompt)],
+      input: [textInput(request.prompt), ...request.attachments.map((attachment) => localImageInput(attachment.path))],
       cwd: request.cwd,
       model,
       effort: effort || null,
@@ -204,11 +205,6 @@ export async function executePipelineAgent(
     ) {
       finalTurn = completionState.cachedTurn;
     }
-    if (!finalTurn) {
-      const read = await codexThreadRead(threadId, true);
-      const authoritative = read.thread.turns.find((turn) => turn.id === turnId);
-      if (completedTurn(authoritative)) finalTurn = authoritative;
-    }
     if (!finalTurn) finalTurn = await completion;
     if (finalTurn) terminalTurnObserved = true;
     if (request.signal.aborted) throw abortError();
@@ -218,10 +214,19 @@ export async function executePipelineAgent(
     if (finalTurn.id !== turnId) throw new Error(`Codex completed an unexpected turn for ${request.node.name}`);
     if (finalTurn.status !== "completed") throw turnFailure(finalTurn);
 
-    const output = extractFinalAgentOutput(finalTurn.items);
+    let resolvedTurn = finalTurn;
+    let output = extractFinalAgentOutput(resolvedTurn.items);
+    if (!output?.trim()) {
+      const read = await codexThreadRead(threadId, true);
+      const hydrated = read.thread.turns.find((turn) => turn.id === turnId);
+      if (hydrated?.status === "completed") {
+        resolvedTurn = hydrated;
+        output = extractFinalAgentOutput(resolvedTurn.items);
+      }
+    }
     if (!output?.trim()) throw new Error(`${request.node.name} completed without a final response`);
     if (request.node.permission !== "read-only") notifyWorkspaceFilesChanged(request.cwd);
-    return { threadId, turnId, items: finalTurn.items, output };
+    return { threadId, turnId, items: resolvedTurn.items, output };
   } finally {
     let cleanupFailure: PipelineTurnCleanupError | null = null;
     if (threadId && turnStartRequested && !turnId && !terminalTurnObserved) {

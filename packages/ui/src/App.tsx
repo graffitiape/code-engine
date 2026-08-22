@@ -9,6 +9,7 @@ import {
 } from "solid-js";
 import EditorPage from "./pages/EditorPage";
 import type { PageKey } from "./design";
+import type { FileLinkTarget } from "./design/MarkdownText";
 import { initializeWorkspace, useWorkspace } from "./stores/workspace";
 import { initializeSettings } from "./stores/settings";
 import { hasDirtyBuffers } from "./stores/buffers";
@@ -40,6 +41,8 @@ const App: Component = () => {
   const [page, setPage] = createSignal<PageKey>(pageFromPath(window.location.pathname));
   const [agentsMounted, setAgentsMounted] = createSignal(page() === "agents");
   const [pipelinesMounted, setPipelinesMounted] = createSignal(page() === "pipelines");
+  const [fileNavigation, setFileNavigation] = createSignal<(FileLinkTarget & { id: number }) | null>(null);
+  let fileNavigationId = 0;
 
   const markPageMounted = (next: PageKey) => {
     if (next === "agents") setAgentsMounted(true);
@@ -53,6 +56,11 @@ const App: Component = () => {
     }
     markPageMounted(next);
     setPage(next);
+  };
+
+  const openFile = (target: FileLinkTarget) => {
+    setFileNavigation({ ...target, id: ++fileNavigationId });
+    navigate("editor");
   };
 
   onMount(() => {
@@ -140,7 +148,7 @@ const App: Component = () => {
         aria-label="Editor workspace"
         style={{ display: page() === "editor" ? "contents" : "none" }}
       >
-        <EditorPage activePage={page()} onNavigatePage={navigate} />
+        <EditorPage activePage={page()} onNavigatePage={navigate} fileNavigation={fileNavigation()} />
       </div>
       <Show when={agentsMounted()}>
         <div
@@ -149,7 +157,7 @@ const App: Component = () => {
           aria-label="Agents workspace"
           style={{ display: page() === "agents" ? "contents" : "none" }}
         >
-          <AgentsPage activePage={page()} onNavigatePage={navigate} />
+          <AgentsPage activePage={page()} onNavigatePage={navigate} onOpenFile={openFile} />
         </div>
       </Show>
       <Show when={pipelinesMounted()}>
@@ -159,7 +167,7 @@ const App: Component = () => {
           aria-label="Pipelines workspace"
           style={{ display: page() === "pipelines" ? "contents" : "none" }}
         >
-          <PipelinesPage activePage={page()} onNavigatePage={navigate} />
+          <PipelinesPage activePage={page()} onNavigatePage={navigate} onOpenFile={openFile} />
         </div>
       </Show>
     </>

@@ -3,6 +3,7 @@
 export * from './types';
 export { Icons } from './icons';
 export { Icon, FileIcon } from './Icon';
+export { MarkdownText } from './MarkdownText';
 export { Select } from './forms/Select';
 export type { SelectOption, SelectProps } from './forms/Select';
 

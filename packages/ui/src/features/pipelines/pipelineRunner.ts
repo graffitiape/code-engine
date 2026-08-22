@@ -80,6 +80,7 @@ export function createPipelineRun(
   cwd: string,
   input: string,
   taskId: string | null = null,
+  attachments: PipelineRun["attachments"] = [],
 ): PipelineRun {
   const now = Date.now();
   const snapshot = cloneDefinition(definition);
@@ -89,6 +90,7 @@ export function createPipelineRun(
     taskId,
     cwd,
     input,
+    attachments: attachments.map((attachment) => ({ ...attachment })),
     definition: snapshot,
     status: "queued",
     nodes: Object.fromEntries(snapshot.nodes.map((node) => [node.id, initialNodeState(node.id)])),
@@ -310,6 +312,7 @@ async function runAgent(
         pipelineName: run.definition.name,
         node,
         prompt,
+        attachments: run.attachments,
         fallbackModel: options.fallbackModel,
         fallbackEffort: options.fallbackEffort,
         signal: options.signal,

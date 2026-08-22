@@ -246,7 +246,7 @@ export async function startPipelineRun(cwd: string, taskId: string): Promise<voi
     return;
   }
 
-  const run = createPipelineRun(definition, cwd, prompt, task.id);
+  const run = createPipelineRun(definition, cwd, prompt, task.id, task.attachments);
   const controller = new AbortController();
   threadOwners.clear();
   stopRequested = false;

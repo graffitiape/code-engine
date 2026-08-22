@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js";
 import type { CodexServerRequest } from "../../bridge/tauri";
-import { Icon } from "../../design";
+import { Icon, MarkdownText } from "../../design";
+import type { FileLinkTarget } from "../../design/MarkdownText";
 import { ServerRequestCard } from "../agents/ServerRequestCard";
 import { buildTopologicalLayers } from "./graph";
 import { pipelineRunLabel } from "./canvas/runState";
@@ -18,6 +19,7 @@ interface PipelineTaskRunMonitorProps {
     decision: PipelineApprovalDecision,
   ) => void;
   onClearError: () => void;
+  onOpenFile: (target: FileLinkTarget) => void;
 }
 
 export function PipelineTaskRunMonitor(props: PipelineTaskRunMonitorProps) {
@@ -104,7 +106,16 @@ export function PipelineTaskRunMonitor(props: PipelineTaskRunMonitorProps) {
         {(stage) => (
           <section id={detailsId} class="pipeline-stage-details">
             <header><strong>{stage().node.name}</strong><span>{pipelineRunLabel(stage().state?.status)}</span></header>
-            <pre>{stage().state?.error ?? stage().state?.output ?? "This step has not produced output yet."}</pre>
+            <Show
+              when={!stage().state?.error}
+              fallback={<pre>{stage().state?.error}</pre>}
+            >
+              <MarkdownText
+                class="pipeline-stage-output"
+                text={stage().state?.output ?? "This step has not produced output yet."}
+                onOpenFile={props.onOpenFile}
+              />
+            </Show>
           </section>
         )}
       </Show>
@@ -158,7 +169,7 @@ export function PipelineTaskRunMonitor(props: PipelineTaskRunMonitorProps) {
       <Show when={props.run?.output && props.run?.status === "completed"}>
         <details class="pipeline-result" open>
           <summary>Pipeline result</summary>
-          <pre>{props.run!.output}</pre>
+          <MarkdownText class="pipeline-result-output" text={props.run!.output} onOpenFile={props.onOpenFile} />
         </details>
       </Show>
 

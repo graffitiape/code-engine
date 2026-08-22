@@ -1,5 +1,5 @@
 import { newPipelineId } from "./pipelinePersistence";
-import type { PipelineRunStatus, PipelineTask } from "./types";
+import type { PipelineRunStatus, PipelineTask, PipelineTaskAttachment } from "./types";
 
 const STORAGE_PREFIX = "ce.pipeline-tasks.v1:";
 const RUN_STATUSES = new Set<PipelineRunStatus>([
@@ -12,6 +12,36 @@ const RUN_STATUSES = new Set<PipelineRunStatus>([
   "failed",
   "cancelled",
 ]);
+export const MAX_PIPELINE_TASK_IMAGES = 10;
+const IMAGE_EXTENSION = /\.(?:gif|jpe?g|png|webp)$/i;
+
+export function imageAttachment(path: string): PipelineTaskAttachment | null {
+  const cleanPath = path.trim();
+  if (!cleanPath || !IMAGE_EXTENSION.test(cleanPath)) return null;
+  const name = cleanPath.split(/[\\/]/).pop()?.trim();
+  if (!name) return null;
+  return { id: cleanPath, path: cleanPath, name };
+}
+
+export function normalizeImageAttachments(value: unknown): PipelineTaskAttachment[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const attachments: PipelineTaskAttachment[] = [];
+  for (const entry of value) {
+    const path = typeof entry === "string"
+      ? entry
+      : entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).path === "string"
+        ? String((entry as Record<string, unknown>).path)
+        : "";
+    const attachment = imageAttachment(path);
+    const key = attachment?.path.toLowerCase();
+    if (!attachment || !key || seen.has(key)) continue;
+    seen.add(key);
+    attachments.push(attachment);
+    if (attachments.length === MAX_PIPELINE_TASK_IMAGES) break;
+  }
+  return attachments;
+}
 
 interface PersistedPipelineTasks {
   schemaVersion: 1;
@@ -49,6 +79,7 @@ function parseTask(value: unknown, pipelineIds: ReadonlySet<string>): PipelineTa
     title: task.title.trim(),
     description: task.description.trim(),
     pipelineId: task.pipelineId,
+    attachments: normalizeImageAttachments(task.attachments),
     createdAt,
     updatedAt,
     runCount: Number.isInteger(task.runCount) && Number(task.runCount) >= 0 ? Number(task.runCount) : 0,
@@ -64,6 +95,7 @@ export function createPipelineTask(
   title: string,
   description: string,
   pipelineId: string,
+  attachments: readonly PipelineTaskAttachment[] = [],
 ): PipelineTask {
   const now = Date.now();
   return {
@@ -71,6 +103,7 @@ export function createPipelineTask(
     title: title.trim(),
     description: description.trim(),
     pipelineId,
+    attachments: normalizeImageAttachments(attachments),
     createdAt: now,
     updatedAt: now,
     runCount: 0,

@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import type { CodexServerRequest } from "../../bridge/tauri";
 import { Icon, Select } from "../../design";
+import type { FileLinkTarget } from "../../design/MarkdownText";
 import { PipelineTaskComposer } from "./PipelineTaskComposer";
 import { PipelineTaskRunMonitor } from "./PipelineTaskRunMonitor";
 import type {
@@ -8,6 +9,7 @@ import type {
   PipelineDefinition,
   PipelineRun,
   PipelineTask,
+  PipelineTaskAttachment,
 } from "./types";
 
 interface PipelineTaskBoardProps {
@@ -22,7 +24,8 @@ interface PipelineTaskBoardProps {
   active: boolean;
   error: string | null;
   onSelect: (id: string) => void;
-  onCreate: (title: string, description: string, pipelineId: string) => void;
+  onCreate: (title: string, description: string, pipelineId: string, attachments: PipelineTaskAttachment[]) => void;
+  onEdit: (taskId: string, title: string, description: string, pipelineId: string, attachments: PipelineTaskAttachment[]) => boolean;
   onPipeline: (taskId: string, pipelineId: string) => void;
   onDelete: (taskId: string) => void;
   onRun: (taskId: string) => void;
@@ -36,6 +39,7 @@ interface PipelineTaskBoardProps {
   onOpenAgents: () => void;
   onOpenTemplate: (pipelineId: string) => void;
   onClearError: () => void;
+  onOpenFile: (target: FileLinkTarget) => void;
 }
 
 function taskStatus(task: PipelineTask, run: PipelineRun | null): string {
@@ -62,6 +66,7 @@ function formatRunTime(value: number | null): string {
 
 export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
   const [composerOpen, setComposerOpen] = createSignal(false);
+  const [editingTaskId, setEditingTaskId] = createSignal<string | null>(null);
   const selectedTask = createMemo(() =>
     props.tasks.find((task) => task.id === props.selectedTaskId) ?? null,
   );
@@ -83,7 +88,7 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
       <aside class="pipeline-task-rail">
         <header>
           <div><span class="pipeline-eyebrow">WORK QUEUE</span><strong>Tasks</strong></div>
-          <button type="button" class="pipeline-icon-button" disabled={props.active} onClick={() => setComposerOpen(true)} aria-label="Add task">
+          <button type="button" class="pipeline-icon-button" onClick={() => setComposerOpen(true)} aria-label="Add task">
             <Icon name="plus" />
           </button>
         </header>
@@ -132,7 +137,7 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
             <span class="pipeline-eyebrow">REUSABLE AUTOMATION</span>
             <h1>Turn work into repeatable runs</h1>
             <p>Add tasks, assign a pipeline template to each one, and trigger or retrigger them from a single queue.</p>
-            <button type="button" class="pipeline-run-button" disabled={props.active} onClick={() => setComposerOpen(true)}>
+            <button type="button" class="pipeline-run-button" onClick={() => setComposerOpen(true)}>
               <Icon name="plus" /> Add task
             </button>
           </section>
@@ -148,6 +153,14 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
               </span>
             </div>
             <div>
+              <button
+                type="button"
+                class="pipeline-secondary-button"
+                disabled={props.active}
+                onClick={() => setEditingTaskId(selectedTask()!.id)}
+              >
+                Edit task
+              </button>
               <Show
                 when={props.active && visibleRun()}
                 fallback={
@@ -173,6 +186,14 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
             <section class="pipeline-task-brief">
               <span class="pipeline-eyebrow">BRIEF</span>
               <p>{selectedTask()!.description}</p>
+              <Show when={selectedTask()!.attachments.length}>
+                <div class="pipeline-task-attached-images">
+                  <span class="pipeline-eyebrow">IMAGES</span>
+                  <For each={selectedTask()!.attachments}>{(attachment) => (
+                    <span title={attachment.path}>{attachment.name}</span>
+                  )}</For>
+                </div>
+              </Show>
             </section>
             <aside class="pipeline-task-config">
               <div>
@@ -203,6 +224,7 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
             onRespond={props.onRespond}
             onApproval={props.onApproval}
             onClearError={props.onClearError}
+            onOpenFile={props.onOpenFile}
           />
         </section>
       </Show>
@@ -212,12 +234,31 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
           pipelines={props.pipelines}
           initialPipelineId={props.selectedPipelineId ?? props.pipelines[0]?.id ?? ""}
           projectPath={props.projectPath}
-          onCreate={(title, description, pipelineId) => {
-            props.onCreate(title, description, pipelineId);
+          onSubmit={(title, description, pipelineId, attachments) => {
+            props.onCreate(title, description, pipelineId, attachments);
             setComposerOpen(false);
           }}
           onCancel={() => setComposerOpen(false)}
         />
+      </Show>
+      <Show when={props.tasks.find((task) => task.id === editingTaskId())}>
+        {(task) => (
+          <PipelineTaskComposer
+            mode="edit"
+            pipelines={props.pipelines}
+            initialTitle={task().title}
+            initialDescription={task().description}
+            initialAttachments={task().attachments}
+            initialPipelineId={task().pipelineId}
+            projectPath={props.projectPath}
+            onSubmit={(title, description, pipelineId, attachments) => {
+              if (!props.onEdit(task().id, title, description, pipelineId, attachments)) return false;
+              setEditingTaskId(null);
+              return true;
+            }}
+            onCancel={() => setEditingTaskId(null)}
+          />
+        )}
       </Show>
     </main>
   );

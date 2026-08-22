@@ -146,6 +146,8 @@ export interface PipelineRun {
   /** Canonical project root captured at run creation. */
   cwd: string;
   input: string;
+  /** Immutable local image snapshot supplied to every Codex stage. */
+  attachments: PipelineTaskAttachment[];
   /** Immutable graph snapshot used by this run. */
   definition: PipelineDefinition;
   status: PipelineRunStatus;
@@ -159,11 +161,18 @@ export interface PipelineRun {
   error: string | null;
 }
 
+export interface PipelineTaskAttachment {
+  id: string;
+  path: string;
+  name: string;
+}
+
 export interface PipelineTask {
   id: string;
   title: string;
   description: string;
   pipelineId: string;
+  attachments: PipelineTaskAttachment[];
   createdAt: number;
   updatedAt: number;
   runCount: number;

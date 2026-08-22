@@ -1,5 +1,6 @@
 import { For, Match, Show, Switch, createSignal } from "solid-js";
 import { Icon } from "../Icon";
+import { AppLogo } from "../AppLogo";
 import { Select } from "../forms/Select";
 import { updateSettings, useSettingsStore } from "../../stores/settings";
 
@@ -208,10 +209,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             <Match when={section() === "about"}>
               <div class="settings-about">
                 <div class="welcome-logo" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none">
-                    <path d="M5 7l3-2 7 4v6l-3 2-7-4V7z" stroke="white" stroke-width="1.4" stroke-linejoin="round" />
-                    <circle cx="12" cy="11" r="2" fill="white" />
-                  </svg>
+                  <AppLogo />
                 </div>
                 <h2>Code Engine</h2>
                 <p>Version 1.0.0</p>

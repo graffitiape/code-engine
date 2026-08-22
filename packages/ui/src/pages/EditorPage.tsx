@@ -16,6 +16,7 @@ import {
 import { save as showSaveDialog } from "@tauri-apps/plugin-dialog";
 import type { FileNode, Tab } from "../design/types";
 import type { PageKey } from "../design";
+import type { FileLinkTarget } from "../design/MarkdownText";
 import CodeEditor from "../components/editor/CodeEditor";
 import {
   createDirectory,
@@ -54,6 +55,7 @@ import {
   useBuffersVersion,
 } from "../stores/buffers";
 import { basename, dirname, iconForName } from "../lib/fileIcon";
+import { AppLogo } from "../design/AppLogo";
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
 import { loadEditorSession, saveEditorSession } from "../stores/editor-session";
 import { useSettingsStore } from "../stores/settings";
@@ -102,6 +104,7 @@ function collectExpandedPaths(nodes: FileNode[], paths = new Set<string>()): Set
 interface EditorPageProps {
   activePage: PageKey;
   onNavigatePage: (page: PageKey) => void;
+  fileNavigation: (FileLinkTarget & { id: number }) | null;
 }
 
 const EditorPage: Component<EditorPageProps> = (props) => {
@@ -590,6 +593,13 @@ const EditorPage: Component<EditorPageProps> = (props) => {
     }
   }
 
+  createEffect(() => {
+    const target = props.fileNavigation;
+    if (!target) return;
+    void target.id;
+    void openFileAt(target.path, target.line, target.column);
+  });
+
   async function refreshProjectFiles() {
     const changes = await refreshBuffersFromDisk();
     if (changes.some((change) => change.state === "conflict" || change.state === "missing")) {
@@ -994,15 +1004,7 @@ const EmptyWorkspace: Component<{
       <div class="welcome">
         <header class="welcome-hero">
           <span class="welcome-logo" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path
-                d="M5 7l3-2 7 4v6l-3 2-7-4V7z"
-                stroke="white"
-                stroke-width="1.4"
-                stroke-linejoin="round"
-              />
-              <circle cx="12" cy="11" r="2" fill="white" />
-            </svg>
+            <AppLogo />
           </span>
           <h1>Code Engine</h1>
           <p class="welcome-tagline">

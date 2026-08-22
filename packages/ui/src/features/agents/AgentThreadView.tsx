@@ -7,6 +7,7 @@ import type {
   CodexThreadItem,
 } from "../../bridge/tauri";
 import { Icon, Select } from "../../design";
+import type { FileLinkTarget } from "../../design/MarkdownText";
 import { AgentFeed } from "./AgentFeed";
 import { ServerRequestCard } from "./ServerRequestCard";
 import { PERMISSION_OPTIONS, asRecord, sourceLabel, threadStatusType, threadTitle } from "./types";
@@ -32,6 +33,7 @@ interface AgentThreadViewProps {
   onRename: (name: string) => Promise<void>;
   onRespond: (id: string | number, response: unknown) => Promise<void>;
   onClearError: () => void;
+  onOpenFile: (target: FileLinkTarget) => void;
 }
 
 export function AgentThreadView(props: AgentThreadViewProps) {
@@ -162,7 +164,7 @@ export function AgentThreadView(props: AgentThreadViewProps) {
         when={!props.loading}
         fallback={<div class="agent-thread-loading"><span class="agent-spinner" /> Loading history…</div>}
       >
-        <AgentFeed items={props.items} active={props.active} />
+      <AgentFeed items={props.items} active={props.active} onOpenFile={props.onOpenFile} />
       </Show>
 
       <footer class="agent-thread-composer">

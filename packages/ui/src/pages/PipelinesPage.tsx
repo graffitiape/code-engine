@@ -1,6 +1,7 @@
 import { Component, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Icon, PageSwitcher, ProjectSwitcher } from "../design";
 import type { PageKey } from "../design";
+import type { FileLinkTarget } from "../design/MarkdownText";
 import { PipelineTaskBoard } from "../features/pipelines/PipelineTaskBoard";
 import { PipelineTemplateWorkspace } from "../features/pipelines/PipelineTemplateWorkspace";
 import {
@@ -31,6 +32,7 @@ import "../styles/agents.css";
 interface PipelinesPageProps {
   activePage: PageKey;
   onNavigatePage: (page: PageKey) => void;
+  onOpenFile: (target: FileLinkTarget) => void;
 }
 
 const PipelinesPage: Component<PipelinesPageProps> = (props) => {
@@ -130,6 +132,12 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
                       error={state.error}
                       onSelect={selectPipelineTask}
                       onCreate={addPipelineTask}
+                      onEdit={(taskId, title, description, pipelineId, attachments) => updatePipelineTask(taskId, {
+                        title,
+                        description,
+                        pipelineId,
+                        attachments,
+                      })}
                       onPipeline={(taskId, pipelineId) => updatePipelineTask(taskId, { pipelineId })}
                       onDelete={deletePipelineTask}
                       onRun={(taskId) => void startPipelineRun(workspace.activeRoot()!, taskId)}
@@ -145,6 +153,7 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
                         setView("templates");
                       }}
                       onClearError={clearPipelineError}
+                      onOpenFile={props.onOpenFile}
                     />
                   }
                 >

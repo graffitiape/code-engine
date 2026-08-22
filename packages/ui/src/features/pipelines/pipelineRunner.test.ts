@@ -110,6 +110,21 @@ function handoff(id: string, source: string, target: string, order = 0): Pipelin
   return { id, source, target, order, mode: "automatic", approvalMessage: "" };
 }
 
+function promptPayload(prompt: string): {
+  originalTask: string;
+  stage: { nodeId: string; name: string; instructions: string };
+  upstreamOutputs: Array<{
+    nodeId: string;
+    nodeName: string;
+    edgeOrder: number;
+    output: string;
+  }>;
+} {
+  const start = prompt.indexOf("{");
+  const end = prompt.lastIndexOf("}");
+  return JSON.parse(prompt.slice(start, end + 1));
+}
+
 function graph(retryCount = 0): PipelineDefinition {
   const baseAgent = {
     type: "agent" as const,
@@ -214,6 +229,48 @@ function dependencyDrivenGraph(joinSlowBranch = false): PipelineDefinition {
   };
 }
 
+function researchImplementationGraph(): PipelineDefinition {
+  return {
+    schemaVersion: 1,
+    id: "research-implementation-pipeline",
+    name: "Research then implement",
+    viewport: { x: 0, y: 0, zoom: 1 },
+    nodes: [
+      { id: "input", type: "input", name: "Task", position: { x: 0, y: 0 } },
+      {
+        id: "research",
+        type: "agent",
+        name: "Research",
+        position: { x: 1, y: 0 },
+        instructions: "Research the requested change.",
+        model: "gpt-test",
+        effort: "medium",
+        permission: "read-only",
+        retryCount: 0,
+        color: "cyan",
+      },
+      {
+        id: "implement",
+        type: "agent",
+        name: "Implement",
+        position: { x: 2, y: 0 },
+        instructions: "Implement the researched change completely.",
+        model: "gpt-test",
+        effort: "medium",
+        permission: "workspace-write",
+        retryCount: 0,
+        color: "purple",
+      },
+      { id: "output", type: "output", name: "Result", position: { x: 3, y: 0 } },
+    ],
+    edges: [
+      handoff("input-research", "input", "research"),
+      handoff("research-implement", "research", "implement"),
+      handoff("implement-output", "implement", "output"),
+    ],
+  };
+}
+
 beforeEach(() => {
   runtime.activeReaders = 0;
   runtime.maxReaders = 0;
@@ -230,6 +287,49 @@ beforeEach(() => {
 });
 
 describe("pipeline runner", () => {
+  it("passes a research agent's output into the connected implement agent", async () => {
+    const run = createPipelineRun(
+      researchImplementationGraph(),
+      "/project",
+      "Add reusable pipeline handoffs",
+    );
+    const controller = new AbortController();
+
+    await executePipelineRun(run, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      callbacks: {
+        onRunStatus: () => undefined,
+        onNodePatch: () => undefined,
+        onEdgePatch: () => undefined,
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    });
+
+    const implementPayload = runtime.prompts
+      .map(promptPayload)
+      .find((entry) => entry.stage.nodeId === "implement");
+    expect(implementPayload).toEqual(expect.objectContaining({
+      originalTask: "Add reusable pipeline handoffs",
+      stage: {
+        nodeId: "implement",
+        name: "Implement",
+        instructions: "Implement the researched change completely.",
+      },
+      upstreamOutputs: [{
+        nodeId: "research",
+        nodeName: "Research",
+        edgeOrder: 0,
+        output: "result from Research",
+      }],
+    }));
+  });
+
   it("starts a downstream reader as soon as its own dependencies complete", async () => {
     runtime.delays.set("fast", 1);
     runtime.delays.set("slow", 30);

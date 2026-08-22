@@ -12,6 +12,7 @@ import {
 import {
   createPipelineTask as createTaskRecord,
   loadPipelineTasks,
+  normalizeImageAttachments,
   savePipelineTasks,
 } from "./pipelineTaskPersistence";
 import type {
@@ -527,11 +528,12 @@ export function selectPipelineTask(id: string) {
   persistTasks();
 }
 
-export function addPipelineTask(title: string, description: string, pipelineId: string): string | null {
-  if (pipelineRunIsActive()) {
-    setPipelineState("error", "Stop the active run before adding another task.");
-    return null;
-  }
+export function addPipelineTask(
+  title: string,
+  description: string,
+  pipelineId: string,
+  attachments: PipelineTask["attachments"] = [],
+): string | null {
   const pipeline = pipelineState.pipelines.find((entry) => entry.id === pipelineId);
   const cleanTitle = title.trim();
   const cleanDescription = description.trim();
@@ -539,29 +541,52 @@ export function addPipelineTask(title: string, description: string, pipelineId: 
     setPipelineState("error", "A task needs a title, description, and pipeline template.");
     return null;
   }
-  const task = createTaskRecord(cleanTitle, cleanDescription, pipelineId);
+  const task = createTaskRecord(cleanTitle, cleanDescription, pipelineId, attachments);
   setPipelineState("tasks", [task, ...pipelineState.tasks]);
-  setPipelineState("selectedTaskId", task.id);
+  if (!pipelineRunIsActive()) setPipelineState("selectedTaskId", task.id);
   persistTasks();
   return task.id;
 }
 
 export function updatePipelineTask(
   taskId: string,
-  patch: Partial<Pick<PipelineTask, "title" | "description" | "pipelineId">>,
-) {
-  if (pipelineRunIsActive()) return;
+  patch: Partial<Pick<PipelineTask, "title" | "description" | "pipelineId" | "attachments">>,
+): boolean {
+  if (pipelineRunIsActive()) {
+    setPipelineState("error", "Stop the active run before editing a task.");
+    return false;
+  }
+  if (!pipelineState.tasks.some((task) => task.id === taskId)) {
+    setPipelineState("error", "The task could not be found.");
+    return false;
+  }
+  const cleanPatch = {
+    ...patch,
+    ...(patch.title === undefined ? {} : { title: patch.title.trim() }),
+    ...(patch.description === undefined ? {} : { description: patch.description.trim() }),
+    ...(patch.attachments === undefined ? {} : {
+      attachments: normalizeImageAttachments(patch.attachments),
+    }),
+  };
+  if (cleanPatch.title === "" || cleanPatch.description === "") {
+    setPipelineState("error", "A task needs a title and description.");
+    return false;
+  }
   const pipelineExists = patch.pipelineId === undefined || pipelineState.pipelines.some(
     (pipeline) => pipeline.id === patch.pipelineId,
   );
-  if (!pipelineExists) return;
+  if (!pipelineExists) {
+    setPipelineState("error", "Choose an available pipeline template.");
+    return false;
+  }
   setPipelineState(
     "tasks",
     pipelineState.tasks.map((task) => task.id === taskId
-      ? { ...task, ...patch, updatedAt: Date.now() }
+      ? { ...task, ...cleanPatch, updatedAt: Date.now() }
       : task),
   );
   persistTasks();
+  return true;
 }
 
 export function deletePipelineTask(taskId: string) {

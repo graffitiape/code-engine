@@ -37,6 +37,10 @@ export function textInput(text: string): CodexUserInput {
   return { type: "text", text, text_elements: [] };
 }
 
+export function localImageInput(path: string): CodexUserInput {
+  return { type: "localImage", path };
+}
+
 export function permissionForTurn(
   preset: CodexPermissionPreset,
   cwd: string,

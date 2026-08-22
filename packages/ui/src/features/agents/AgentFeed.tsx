@@ -1,11 +1,13 @@
 import { For, Match, Show, Switch, createEffect } from "solid-js";
 import type { CodexThreadItem } from "../../bridge/tauri";
-import { Icon } from "../../design";
+import { Icon, MarkdownText } from "../../design";
+import type { FileLinkTarget } from "../../design/MarkdownText";
 import { safeJson, userMessageText } from "./types";
 
 interface AgentFeedProps {
   items: CodexThreadItem[];
   active: boolean;
+  onOpenFile: (target: FileLinkTarget) => void;
 }
 
 export function AgentFeed(props: AgentFeedProps) {
@@ -31,7 +33,7 @@ export function AgentFeed(props: AgentFeedProps) {
           </div>
         }
       >
-        <For each={props.items}>{(item) => <FeedItem item={item} />}</For>
+        <For each={props.items}>{(item) => <FeedItem item={item} onOpenFile={props.onOpenFile} />}</For>
       </Show>
       <Show when={props.active}>
         <div class="agent-thinking-row">
@@ -43,7 +45,7 @@ export function AgentFeed(props: AgentFeedProps) {
   );
 }
 
-function FeedItem(props: { item: CodexThreadItem }) {
+function FeedItem(props: { item: CodexThreadItem; onOpenFile: (target: FileLinkTarget) => void }) {
   const item = () => props.item;
   return (
     <Switch fallback={<GenericToolItem item={item()} />}>
@@ -56,7 +58,7 @@ function FeedItem(props: { item: CodexThreadItem }) {
       <Match when={item().type === "agentMessage"}>
         <article class="agent-message assistant">
           <div class="agent-message-who">Codex</div>
-          <div class="agent-message-text">{item().text}</div>
+          <MarkdownText class="agent-message-text" text={item().text} onOpenFile={props.onOpenFile} />
         </article>
       </Match>
       <Match when={item().type === "reasoning"}>

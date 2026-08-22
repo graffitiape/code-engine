@@ -54,6 +54,118 @@ beforeEach(() => {
 });
 
 describe("Codex pipeline runtime reconciliation", () => {
+  it("waits for streamed completion instead of trusting an early interrupted snapshot", async () => {
+    const completedTurn = {
+      ...inProgressTurn,
+      status: "completed",
+      items: [{ id: "message-1", type: "agentMessage", text: "Research complete" }],
+    };
+    runtime.threadRead.mockResolvedValue({
+      thread: { turns: [{ ...inProgressTurn, status: "interrupted" }] },
+    });
+    runtime.turnStart.mockImplementation(async () => {
+      window.setTimeout(() => {
+        runtime.eventObserver?.({
+          generation: 7,
+          method: "turn/completed",
+          params: { threadId: "thread-1", turn: completedTurn },
+        });
+      }, 0);
+      return { turn: inProgressTurn };
+    });
+
+    await expect(executePipelineAgent({
+      cwd: "/project",
+      pipelineName: "Release",
+      node: {
+        id: "agent",
+        type: "agent",
+        name: "Agent",
+        position: { x: 0, y: 0 },
+        instructions: "Inspect the project.",
+        model: "gpt-test",
+        effort: "medium",
+        permission: "read-only",
+        retryCount: 0,
+        color: "purple",
+      },
+      prompt: "Inspect",
+      attachments: [{ id: "/tmp/design.png", path: "/tmp/design.png", name: "design.png" }],
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      signal: new AbortController().signal,
+      onThreadStarted: () => undefined,
+      onTurnStarted: () => undefined,
+      onDelta: () => undefined,
+    })).resolves.toMatchObject({
+      threadId: "thread-1",
+      turnId: "turn-1",
+      output: "Research complete",
+    });
+
+    expect(runtime.threadRead).not.toHaveBeenCalled();
+    expect(runtime.turnInterrupt).not.toHaveBeenCalled();
+    expect(runtime.turnStart).toHaveBeenCalledWith(expect.objectContaining({
+      input: [
+        { type: "text", text: "Inspect", text_elements: [] },
+        { type: "localImage", path: "/tmp/design.png" },
+      ],
+    }));
+  });
+
+  it("hydrates final output only after receiving a completed event", async () => {
+    runtime.turnStart.mockImplementation(async () => {
+      window.setTimeout(() => {
+        runtime.eventObserver?.({
+          generation: 7,
+          method: "turn/completed",
+          params: {
+            threadId: "thread-1",
+            turn: { ...inProgressTurn, status: "completed" },
+          },
+        });
+      }, 0);
+      return { turn: inProgressTurn };
+    });
+    runtime.threadRead.mockResolvedValue({
+      thread: {
+        turns: [{
+          ...inProgressTurn,
+          status: "completed",
+          items: [{ id: "message-1", type: "agentMessage", text: "Hydrated response" }],
+        }],
+      },
+    });
+
+    await expect(executePipelineAgent({
+      cwd: "/project",
+      pipelineName: "Release",
+      node: {
+        id: "agent",
+        type: "agent",
+        name: "Agent",
+        position: { x: 0, y: 0 },
+        instructions: "Inspect the project.",
+        model: "gpt-test",
+        effort: "medium",
+        permission: "read-only",
+        retryCount: 0,
+        color: "purple",
+      },
+      prompt: "Inspect",
+      attachments: [],
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      signal: new AbortController().signal,
+      onThreadStarted: () => undefined,
+      onTurnStarted: () => undefined,
+      onDelta: () => undefined,
+    })).resolves.toMatchObject({ output: "Hydrated response" });
+
+    expect(runtime.threadRead).toHaveBeenCalledTimes(1);
+    expect(runtime.turnInterrupt).not.toHaveBeenCalled();
+  });
+
   it("does not accept an unknown cached turn status as terminal", async () => {
     runtime.turnStart.mockImplementation(async () => {
       runtime.eventObserver?.({
@@ -88,6 +200,7 @@ describe("Codex pipeline runtime reconciliation", () => {
         color: "purple",
       },
       prompt: "Inspect",
+      attachments: [],
       fallbackModel: "gpt-test",
       fallbackEffort: "medium",
       signal: new AbortController().signal,
@@ -119,6 +232,7 @@ describe("Codex pipeline runtime reconciliation", () => {
         color: "purple",
       },
       prompt: "Inspect",
+      attachments: [],
       fallbackModel: "gpt-test",
       fallbackEffort: "medium",
       signal: new AbortController().signal,

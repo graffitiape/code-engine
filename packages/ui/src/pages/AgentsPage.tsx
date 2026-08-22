@@ -1,6 +1,7 @@
 import { Component, Show } from "solid-js";
 import { PageSwitcher, ProjectSwitcher } from "../design";
 import type { PageKey } from "../design";
+import type { FileLinkTarget } from "../design/MarkdownText";
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
 import { useWorkspace } from "../stores/workspace";
 import { AgentComposer } from "../features/agents/AgentComposer";
@@ -31,6 +32,7 @@ import "../styles/agents.css";
 interface AgentsPageProps {
   activePage: PageKey;
   onNavigatePage: (page: PageKey) => void;
+  onOpenFile: (target: FileLinkTarget) => void;
 }
 
 const AgentsPage: Component<AgentsPageProps> = (props) => {
@@ -145,6 +147,7 @@ const AgentsPage: Component<AgentsPageProps> = (props) => {
                     onRename={(name) => renameAgentThread(thread().id, name)}
                     onRespond={respondToServerRequest}
                     onClearError={clearAgentError}
+                    onOpenFile={props.onOpenFile}
                   />
                 )}
               </Show>

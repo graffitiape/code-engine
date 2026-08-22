@@ -47,4 +47,31 @@ describe("pipeline task persistence", () => {
       tasks: [],
     });
   });
+
+  it("loads old tasks without attachments and discards invalid image records", () => {
+    const task = createPipelineTask("Attach designs", "Use the supplied mockups", "pipeline-1");
+    values.set("ce.pipeline-tasks.v1:/project", JSON.stringify({
+      schemaVersion: 1,
+      selectedId: task.id,
+      tasks: [
+        { ...task, attachments: undefined },
+        {
+          ...task,
+          id: "task-with-images",
+          attachments: [
+            { id: "ignored", path: "/tmp/mockup.PNG", name: "wrong-name.png" },
+            { path: "/tmp/mockup.PNG" },
+            { path: "/tmp/readme.txt" },
+            { nope: true },
+          ],
+        },
+      ],
+    }));
+
+    const loaded = loadPipelineTasks("/project", new Set(["pipeline-1"]));
+    expect(loaded.tasks[0].attachments).toEqual([]);
+    expect(loaded.tasks[1].attachments).toEqual([
+      { id: "/tmp/mockup.PNG", path: "/tmp/mockup.PNG", name: "mockup.PNG" },
+    ]);
+  });
 });
