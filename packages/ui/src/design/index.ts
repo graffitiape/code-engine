@@ -29,5 +29,7 @@ export { SearchReplace } from './overlays/SearchReplace';
 export type { SearchReplaceProps } from './overlays/SearchReplace';
 export { GitPanel } from './overlays/GitPanel';
 export type { GitPanelProps } from './overlays/GitPanel';
+export { GitSetupDialog } from './overlays/GitSetupDialog';
+export type { GitSetupDialogProps } from './overlays/GitSetupDialog';
 export { SettingsPanel } from './overlays/SettingsPanel';
 export type { SettingsPanelProps } from './overlays/SettingsPanel';

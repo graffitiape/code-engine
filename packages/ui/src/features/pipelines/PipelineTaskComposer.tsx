@@ -47,7 +47,7 @@ export function PipelineTaskComposer(props: PipelineTaskComposerProps) {
       description: `${agents} Codex ${agents === 1 ? "agent" : "agents"}${approvals ? ` · ${approvals} approval ${approvals === 1 ? "gate" : "gates"}` : ""}${integrations ? ` · ${integrations} integration${integrations === 1 ? "" : "s"}` : ""}`,
     };
   }));
-  const canSubmit = () => Boolean(title().trim() && description().trim() && selectedPipeline());
+  const canSubmit = () => Boolean(title().trim() && selectedPipeline());
   const submit = () => {
     if (!canSubmit()) return;
     props.onSubmit(title(), description(), pipelineId(), attachments());
@@ -90,7 +90,7 @@ export function PipelineTaskComposer(props: PipelineTaskComposerProps) {
         </label>
 
         <label class="pipeline-task-description-field">
-          <span>Brief</span>
+          <span>Brief (optional)</span>
           <textarea
             value={description()}
             onInput={(event) => setDescription(event.currentTarget.value)}
@@ -100,7 +100,7 @@ export function PipelineTaskComposer(props: PipelineTaskComposerProps) {
                 submit();
               }
             }}
-            placeholder="Describe the feature, bug, refactor, or investigation. Include acceptance criteria when they matter…"
+            placeholder="Add context, constraints, or acceptance criteria when they matter…"
           />
         </label>
 

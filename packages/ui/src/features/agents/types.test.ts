@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodexThread } from "../../bridge/tauri";
+import { composePipelinePrompt } from "../pipelines/prompt";
+import type { PipelinePromptInput } from "../pipelines/types";
 import {
   flattenThreadItems,
   formatRelativeTime,
@@ -51,6 +53,38 @@ describe("Codex task helpers", () => {
         content: [textInput("hello"), { type: "localImage", path: "/tmp/image.png" }],
       }),
     ).toBe("hello\n/tmp/image.png");
+  });
+
+  it("displays a pipeline user message as its original task and keeps attachments", () => {
+    const prompt = composePipelinePrompt({
+      pipelineName: "Development",
+      runId: "run-1",
+      originalTask: "# Fix the feed\n\nShow the normal task text.",
+      node: {
+        id: "implement",
+        type: "agent",
+        name: "Implement",
+        position: { x: 0, y: 0 },
+        instructions: "Implement the task.",
+        model: "gpt-test",
+        effort: "high",
+        permission: "workspace-write",
+        retryCount: 0,
+        color: "#7aa2f7",
+      },
+      upstreamOutputs: [],
+    } satisfies PipelinePromptInput);
+
+    expect(userMessageText({
+      id: "pipeline-message",
+      type: "userMessage",
+      content: [textInput(prompt), { type: "localImage", path: "/tmp/reference.png" }],
+    })).toBe("# Fix the feed\n\nShow the normal task text.\n/tmp/reference.png");
+    expect(userMessageText({
+      id: "legacy-pipeline-message",
+      type: "userMessage",
+      text: prompt,
+    })).toBe("# Fix the feed\n\nShow the normal task text.");
   });
 
   it("flattens turns and formats recent times", () => {

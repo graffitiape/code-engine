@@ -146,7 +146,7 @@ function parseNode(value: unknown): PipelineNode | null {
   };
 }
 
-function parseDefinition(value: unknown): PipelineDefinition | null {
+export function parsePipelineDefinition(value: unknown): PipelineDefinition | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   if (
@@ -230,7 +230,7 @@ export function loadPipelines(cwd: string, fallback: PipelineDefinition): Persis
     if (!parsed || typeof parsed !== "object") throw new Error("No saved pipelines");
     const value = parsed as Record<string, unknown>;
     const pipelines = Array.isArray(value.pipelines)
-      ? value.pipelines.map(parseDefinition).filter((item): item is PipelineDefinition => Boolean(item))
+      ? value.pipelines.map(parsePipelineDefinition).filter((item): item is PipelineDefinition => Boolean(item))
       : [];
     if (!pipelines.length) throw new Error("No usable pipelines");
     const selectedId = typeof value.selectedId === "string" && pipelines.some((p) => p.id === value.selectedId)

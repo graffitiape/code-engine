@@ -1176,6 +1176,7 @@
 .pipeline-stage-chip.stage-failed > span { background: var(--red); }
 .pipeline-stage-chip.stage-cancelled > span,
 .pipeline-stage-chip.stage-skipped > span { background: var(--fg-3); }
+.pipeline-stage-chip.stage-not-recorded > span { background: transparent; border: 1px solid var(--fg-3); }
 .pipeline-stage-details {
   margin: 2px 0 6px;
   border: 1px solid var(--border);
@@ -1210,6 +1211,8 @@
   line-height: 1.55;
   user-select: text;
 }
+.pipeline-stage-chat-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.pipeline-stage-chat-link small { color: var(--fg-3); font-size: 9px; }
 .pipeline-validation-message,
 .pipeline-run-error {
   display: flex;
@@ -1387,7 +1390,12 @@
 .pipeline-task-monitor > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
 .pipeline-task-monitor > header > div { display: flex; flex-direction: column; gap: 5px; }
 .pipeline-task-monitor > header strong { font-size: 11px; }
+.pipeline-run-history-select { max-width: 360px; padding: 5px 28px 5px 8px; color: var(--text-primary); background: var(--bg-2); border: 1px solid var(--border); border-radius: 5px; font: inherit; font-size: 11px; }
 .pipeline-task-monitor .pipeline-monitor-empty { min-height: 110px; height: auto; border: 1px dashed var(--border); border-radius: 7px; background: color-mix(in oklab, var(--bg-2) 42%, transparent); }
+.pipeline-stage-history-unavailable { margin: 0; padding: 10px; color: var(--fg-3); font-size: 9px; }
+.pipeline-legacy-run-notice { min-height: 70px; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 14px; border: 1px dashed color-mix(in oklab, var(--yellow) 34%, var(--border)); border-radius: 7px; color: var(--fg-2); background: color-mix(in oklab, var(--yellow) 5%, var(--bg-2)); font-size: 9px; text-align: center; }
+.pipeline-legacy-run-notice > svg { flex: 0 0 auto; color: var(--yellow); }
+.pipeline-legacy-run-notice strong { color: var(--fg-1); }
 
 /* ===== New task composer ===== */
 .pipeline-task-composer-backdrop {

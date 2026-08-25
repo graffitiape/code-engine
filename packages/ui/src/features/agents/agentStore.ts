@@ -392,6 +392,7 @@ export async function selectAgentThread(threadId: string, cwd: string) {
     if (
       !operationIsCurrent(cwd, token) ||
       agentState.selectedThreadId !== threadId ||
+      response.thread.id !== threadId ||
       response.thread.cwd !== cwd
     ) return;
     setAgentState("selectedThread", response.thread);
@@ -403,6 +404,50 @@ export async function selectAgentThread(threadId: string, cwd: string) {
     if (operationIsCurrent(cwd, token) && agentState.selectedThreadId === threadId) {
       setAgentState("error", messageOf(error));
     }
+  } finally {
+    if (operationIsCurrent(cwd, token) && agentState.selectedThreadId === threadId) {
+      setAgentState("loadingThread", false);
+    }
+  }
+}
+
+export async function openAgentThread(threadId: string, cwd: string): Promise<boolean> {
+  if (agentState.cwd !== cwd) return false;
+  const token = bootstrapToken;
+  const previousThreadId = agentState.selectedThreadId;
+  const previousThread = agentState.selectedThread;
+  setAgentState({ selectedThreadId: threadId, loadingThread: true, composerOpen: false, error: null });
+  try {
+    let response;
+    try {
+      response = await codexThreadResume({ threadId, cwd });
+    } catch {
+      response = await codexThreadRead(threadId, true);
+    }
+    if (
+      !operationIsCurrent(cwd, token) ||
+      agentState.selectedThreadId !== threadId ||
+      response.thread.id !== threadId ||
+      response.thread.cwd !== cwd
+    ) {
+      throw new Error("This chat does not belong to the current project.");
+    }
+    setAgentState("selectedThread", response.thread);
+    setAgentState("feedByThread", threadId, flattenThreadItems(response.thread));
+    const running = [...response.thread.turns].reverse().find((turn) => turn.status === "inProgress");
+    setAgentState("activeTurnByThread", threadId, running?.id ?? null);
+    upsertThread(response.thread);
+    return true;
+  } catch (error) {
+    if (operationIsCurrent(cwd, token) && agentState.selectedThreadId === threadId) {
+      setAgentState({
+        selectedThreadId: previousThreadId,
+        selectedThread: previousThread,
+        loadingThread: false,
+        error: messageOf(error),
+      });
+    }
+    return false;
   } finally {
     if (operationIsCurrent(cwd, token) && agentState.selectedThreadId === threadId) {
       setAgentState("loadingThread", false);

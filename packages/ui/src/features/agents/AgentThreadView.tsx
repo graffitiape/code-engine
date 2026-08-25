@@ -164,7 +164,12 @@ export function AgentThreadView(props: AgentThreadViewProps) {
         when={!props.loading}
         fallback={<div class="agent-thread-loading"><span class="agent-spinner" /> Loading history…</div>}
       >
-      <AgentFeed items={props.items} active={props.active} onOpenFile={props.onOpenFile} />
+        <AgentFeed
+          items={props.items}
+          active={props.active}
+          threadId={props.thread.id}
+          onOpenFile={props.onOpenFile}
+        />
       </Show>
 
       <footer class="agent-thread-composer">

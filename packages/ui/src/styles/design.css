@@ -1372,6 +1372,213 @@ button {
 }
 .git-commit .commit-actions button:hover { filter: brightness(1.1); }
 
+.git-header .git-remote-pill,
+.git-header .git-identity-warning,
+.git-header .git-header-action {
+  height: 27px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg-3);
+  color: var(--fg-1);
+  font: 600 10.5px var(--font-ui);
+}
+.git-header .git-remote-pill:hover,
+.git-header .git-header-action:hover { background: var(--bg-4); color: var(--fg-0); }
+.git-header .git-remote-pill small { color: var(--fg-3); font: 9px var(--font-mono); }
+.git-header .git-identity-warning {
+  border-color: color-mix(in oklab, var(--yellow) 44%, var(--border));
+  background: color-mix(in oklab, var(--yellow) 10%, var(--bg-3));
+  color: var(--yellow);
+}
+.git-header .git-header-action {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg-3));
+  color: var(--accent);
+}
+
+.git-setup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 6, 14, .72);
+  backdrop-filter: blur(4px);
+  animation: fade .12s ease-out;
+}
+.git-setup-dialog {
+  width: min(840px, 94vw);
+  max-height: min(720px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--bg-2) 97%, transparent);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, .62);
+  animation: pop .16s cubic-bezier(.2, .9, .3, 1.1);
+}
+.git-setup-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.git-setup-icon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, var(--orange) 42%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--orange) 14%, var(--bg-3));
+  color: var(--orange);
+}
+.git-setup-header > div { min-width: 0; flex: 1; }
+.git-setup-header > div > span,
+.git-setup-section-heading > div > span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--fg-3);
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+.git-setup-header h2 { color: var(--fg-0); font-size: 18px; line-height: 1.2; }
+.git-setup-header p { margin-top: 5px; color: var(--fg-2); font-size: 11px; line-height: 1.45; }
+.git-setup-message {
+  padding: 9px 20px;
+  border-bottom: 1px solid var(--border);
+  font: 10.5px/1.45 var(--font-mono);
+}
+.git-setup-message.error { background: color-mix(in oklab, var(--red) 9%, transparent); color: var(--red); }
+.git-setup-message.success { background: color-mix(in oklab, var(--green) 8%, transparent); color: var(--green); }
+.git-setup-content {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
+  overflow: auto;
+}
+.git-identity-form,
+.git-remote-setup { min-width: 0; padding: 20px; }
+.git-identity-form { border-right: 1px solid var(--border); }
+.git-setup-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.git-setup-section-heading strong { color: var(--fg-0); font-size: 12px; }
+.git-setup-state {
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--fg-3);
+  font: 700 7.5px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+.git-setup-state.ready { border-color: color-mix(in oklab, var(--green) 35%, var(--border)); color: var(--green); }
+.git-setup-state.attention { border-color: color-mix(in oklab, var(--yellow) 38%, var(--border)); color: var(--yellow); }
+.git-identity-form > label { display: block; margin-bottom: 12px; }
+.git-identity-form > label > span,
+.git-identity-scope legend {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--fg-2);
+  font-size: 10px;
+  font-weight: 600;
+}
+.git-identity-form input[type="text"],
+.git-identity-form input[type="email"],
+.git-identity-form > label > input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  font: 11.5px var(--font-mono);
+  user-select: text;
+}
+.git-identity-form > label > input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 12%, transparent); }
+.git-identity-scope { margin: 3px 0 14px; border: 0; }
+.git-identity-scope > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  cursor: pointer;
+}
+.git-identity-scope > label:first-of-type { border-radius: 6px 6px 0 0; }
+.git-identity-scope > label:last-of-type { margin-top: -1px; border-radius: 0 0 6px 6px; }
+.git-identity-scope > label.selected { position: relative; border-color: color-mix(in oklab, var(--accent) 55%, var(--border)); background: color-mix(in oklab, var(--accent) 9%, var(--bg-1)); }
+.git-identity-scope input { margin-top: 2px; accent-color: var(--accent); }
+.git-identity-scope label > span { display: flex; flex-direction: column; gap: 3px; }
+.git-identity-scope strong { color: var(--fg-1); font-size: 10px; }
+.git-identity-scope small { color: var(--fg-3); font-size: 8.5px; line-height: 1.35; }
+.git-setup-primary,
+.git-setup-secondary,
+.git-setup-link {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: 600 10.5px var(--font-ui);
+}
+.git-setup-primary { background: var(--accent); color: var(--bg-0); }
+.git-setup-secondary { border-color: var(--border-strong); background: var(--bg-3); color: var(--fg-1); }
+.git-setup-link { padding-inline: 2px; background: transparent; color: var(--accent); }
+.git-setup-primary:hover,
+.git-setup-secondary:hover { filter: brightness(1.1); }
+.git-setup-primary:disabled,
+.git-setup-secondary:disabled { opacity: .48; cursor: not-allowed; filter: none; }
+.git-remote-details {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-1);
+}
+.git-remote-details > div { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+.git-remote-details > div:last-child { border-bottom: 0; }
+.git-remote-details dt { color: var(--fg-3); font: 8.5px var(--font-mono); text-transform: uppercase; }
+.git-remote-details dd { min-width: 0; overflow: hidden; color: var(--fg-1); font: 9.5px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.git-remote-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.git-credential-note { margin-top: 14px; color: var(--fg-3); font-size: 9px; line-height: 1.55; }
+.git-setup-empty { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid color-mix(in oklab, var(--yellow) 30%, var(--border)); border-radius: 7px; background: color-mix(in oklab, var(--yellow) 7%, var(--bg-1)); color: var(--yellow); }
+.git-setup-empty p { color: var(--fg-2); font-size: 10px; line-height: 1.45; }
+.git-setup-dialog > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 20px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg-1) 60%, transparent);
+}
+.git-setup-dialog > footer > span { min-width: 0; overflow: hidden; color: var(--fg-3); font: 8.5px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .git-setup-content { grid-template-columns: 1fr; }
+  .git-identity-form { border-right: 0; border-bottom: 1px solid var(--border); }
+}
+
 /* Settings panel */
 .settings {
   left: 50%; top: 50%;

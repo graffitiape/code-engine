@@ -1,6 +1,7 @@
 use ce_git::{
-    branches, checkout_branch, commit as create_commit, recent_log, stage_all, stage_file, stash,
-    status, unified_diff, unstage_all, unstage_file, GitDiffKind,
+    branches, check_remote_access, checkout_branch, commit as create_commit, publish_branch,
+    recent_log, repository_info, set_identity, stage_all, stage_file, stash, status, unified_diff,
+    unstage_all, unstage_file, GitDiffKind, GitIdentityScope,
 };
 use git2::{BranchType, Repository};
 use std::fs;
@@ -139,6 +140,49 @@ fn commit_uses_configured_identity_preserves_message_and_never_adds_coauthor() {
 }
 
 #[test]
+fn repository_setup_reports_remote_safely_and_saves_project_identity() {
+    let fixture = TestRepo::new();
+    let repo = fixture.repo();
+    let mut config = repo.config().expect("repository config");
+    config.set_str("user.name", "").expect("clear local name");
+    config.set_str("user.email", "").expect("clear local email");
+    config
+        .set_str("credential.helper", "manager-core")
+        .expect("configure credential helper");
+    repo.remote(
+        "origin",
+        "https://secret-token@github.com/acme/private-project.git",
+    )
+    .expect("configure remote");
+    drop(config);
+    drop(repo);
+
+    let initial = repository_info(fixture.path()).expect("read Git setup");
+    assert!(!initial.identity.configured);
+    assert_eq!(initial.identity.scope, "missing");
+    let remote = initial.remote.expect("selected remote");
+    assert_eq!(remote.provider, "github");
+    assert_eq!(remote.transport, "https");
+    assert!(!remote.display_url.contains("secret-token"));
+    assert_eq!(initial.credential_helper, "Git Credential Manager");
+
+    let configured = set_identity(
+        fixture.path(),
+        "Ada Lovelace",
+        "ada@example.test",
+        GitIdentityScope::Project,
+    )
+    .expect("save project identity");
+    assert!(configured.identity.configured);
+    assert_eq!(configured.identity.scope, "project");
+    assert_eq!(configured.identity.name.as_deref(), Some("Ada Lovelace"));
+    assert_eq!(
+        configured.identity.email.as_deref(),
+        Some("ada@example.test")
+    );
+}
+
+#[test]
 fn branch_checkout_is_safe_and_rejects_a_dirty_worktree() {
     let fixture = TestRepo::new();
     fixture.initial_commit();
@@ -165,6 +209,36 @@ fn branch_checkout_is_safe_and_rejects_a_dirty_worktree() {
         .find_branch("feature", BranchType::Local)
         .unwrap()
         .is_head());
+}
+
+#[test]
+fn publish_branch_sets_upstream_and_remote_access_check_is_read_only() {
+    let fixture = TestRepo::new();
+    fixture.initial_commit();
+    let remote_root = tempfile::tempdir().expect("temporary remote");
+    Repository::init_bare(remote_root.path()).expect("initialize bare remote");
+    fixture
+        .repo()
+        .remote(
+            "origin",
+            remote_root.path().to_str().expect("UTF-8 remote path"),
+        )
+        .expect("configure local remote");
+
+    assert_eq!(
+        publish_branch(fixture.path()).expect("publish main"),
+        "main"
+    );
+    let main = branches(fixture.path())
+        .expect("list branches")
+        .into_iter()
+        .find(|branch| branch.name == "main" && branch.kind == "local")
+        .expect("local main branch");
+    assert_eq!(main.upstream.as_deref(), Some("origin/main"));
+    assert_eq!(
+        check_remote_access(fixture.path()).expect("check local remote"),
+        "Git remote"
+    );
 }
 
 #[test]

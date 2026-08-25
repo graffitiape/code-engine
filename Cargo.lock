@@ -310,6 +310,7 @@ dependencies = [
  "git2",
  "serde",
  "tempfile",
+ "url",
 ]
 
 [[package]]

@@ -61,7 +61,6 @@ function parseTask(value: unknown, pipelineIds: ReadonlySet<string>): PipelineTa
     typeof task.title !== "string" ||
     !task.title.trim() ||
     typeof task.description !== "string" ||
-    !task.description.trim() ||
     typeof task.pipelineId !== "string" ||
     !pipelineIds.has(task.pipelineId)
   ) return null;

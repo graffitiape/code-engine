@@ -7,23 +7,47 @@ import { safeJson, userMessageText } from "./types";
 interface AgentFeedProps {
   items: CodexThreadItem[];
   active: boolean;
+  threadId: string;
   onOpenFile: (target: FileLinkTarget) => void;
+}
+
+const FEED_BOTTOM_THRESHOLD = 32;
+
+export function isNearFeedBottom(
+  dimensions: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">,
+  threshold = FEED_BOTTOM_THRESHOLD,
+): boolean {
+  return dimensions.scrollHeight - dimensions.scrollTop - dimensions.clientHeight <= threshold;
 }
 
 export function AgentFeed(props: AgentFeedProps) {
   let scrollRef: HTMLDivElement | undefined;
+  let followOutput = true;
+  let renderedThreadId = props.threadId;
 
   createEffect(() => {
+    const threadId = props.threadId;
     props.items.length;
     props.items.at(-1)?.text;
     props.items.at(-1)?.aggregatedOutput;
+    props.active;
+    if (threadId !== renderedThreadId) {
+      renderedThreadId = threadId;
+      followOutput = true;
+    }
     queueMicrotask(() => {
-      if (scrollRef) scrollRef.scrollTop = scrollRef.scrollHeight;
+      if (scrollRef && followOutput) scrollRef.scrollTop = scrollRef.scrollHeight;
     });
   });
 
   return (
-    <div class="agent-feed" ref={scrollRef}>
+    <div
+      class="agent-feed"
+      ref={scrollRef}
+      onScroll={(event) => {
+        followOutput = isNearFeedBottom(event.currentTarget);
+      }}
+    >
       <Show
         when={props.items.length > 0}
         fallback={

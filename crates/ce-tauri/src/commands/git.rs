@@ -1,5 +1,6 @@
 use ce_git::{
-    GitBranchInfo, GitDiffKind, GitDiffResult, GitLogEntry, GitRepoStatus, GitStashResult,
+    GitBranchInfo, GitDiffKind, GitDiffResult, GitIdentityScope, GitLogEntry, GitRepoStatus,
+    GitRepositoryInfo, GitStashResult,
 };
 use tauri::State;
 
@@ -25,6 +26,31 @@ where
 pub async fn git_status(state: State<'_, AppState>, path: String) -> Result<GitRepoStatus, String> {
     with_active_repository(&state, &path, |root| {
         ce_git::status(root).map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_repository_info(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<GitRepositoryInfo, String> {
+    with_active_repository(&state, &path, |root| {
+        ce_git::repository_info(root).map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_set_identity(
+    state: State<'_, AppState>,
+    path: String,
+    name: String,
+    email: String,
+    scope: GitIdentityScope,
+) -> Result<GitRepositoryInfo, String> {
+    with_active_repository(&state, &path, move |root| {
+        ce_git::set_identity(root, &name, &email, scope).map_err(|error| error.to_string())
     })
     .await
 }
@@ -106,6 +132,28 @@ pub async fn git_commit(
 pub async fn git_push(state: State<'_, AppState>, path: String) -> Result<String, String> {
     with_active_repository(&state, &path, move |root| {
         ce_git::push(root).map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_publish_branch(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    with_active_repository(&state, &path, move |root| {
+        ce_git::publish_branch(root).map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_check_remote_access(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    with_active_repository(&state, &path, move |root| {
+        ce_git::check_remote_access(root).map_err(|error| error.to_string())
     })
     .await
 }

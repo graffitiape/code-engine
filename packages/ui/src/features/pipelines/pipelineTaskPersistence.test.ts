@@ -38,6 +38,26 @@ describe("pipeline task persistence", () => {
     });
   });
 
+  it("round-trips a title-only task", () => {
+    const task = createPipelineTask("Title only", "  ", "pipeline-1");
+    expect(task.description).toBe("");
+    expect(savePipelineTasks("/project", [task], task.id)).toBe(true);
+    expect(loadPipelineTasks("/project", new Set(["pipeline-1"])).tasks).toEqual([task]);
+  });
+
+  it("loads an existing v1 task with an empty description", () => {
+    const task = createPipelineTask("Persisted title", "Brief", "pipeline-1");
+    values.set("ce.pipeline-tasks.v1:/project", JSON.stringify({
+      schemaVersion: 1,
+      selectedId: task.id,
+      tasks: [{ ...task, description: "" }],
+    }));
+
+    expect(loadPipelineTasks("/project", new Set(["pipeline-1"])).tasks).toEqual([
+      { ...task, description: "" },
+    ]);
+  });
+
   it("drops tasks whose template no longer exists", () => {
     const task = createPipelineTask("Orphaned", "Old work", "removed-pipeline");
     savePipelineTasks("/project", [task], task.id);

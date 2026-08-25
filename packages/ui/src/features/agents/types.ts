@@ -6,6 +6,7 @@ import type {
   CodexTurnStartParams,
   CodexUserInput,
 } from "../../bridge/tauri";
+import { pipelinePromptDisplayText } from "../pipelines/prompt";
 
 export const CODEX_THREAD_SOURCES = ["appServer", "cli", "vscode"] as const;
 
@@ -132,11 +133,15 @@ export function safeJson(value: unknown): string {
 }
 
 export function userMessageText(item: CodexThreadItem): string {
-  if (!Array.isArray(item.content)) return typeof item.text === "string" ? item.text : "";
+  if (!Array.isArray(item.content)) {
+    return typeof item.text === "string" ? pipelinePromptDisplayText(item.text) : "";
+  }
   return item.content
     .map((entry) => {
       if (typeof entry === "string") return entry;
-      return entry.type === "text" ? entry.text ?? "" : entry.path ?? entry.url ?? "";
+      return entry.type === "text"
+        ? pipelinePromptDisplayText(entry.text ?? "")
+        : entry.path ?? entry.url ?? "";
     })
     .filter(Boolean)
     .join("\n");

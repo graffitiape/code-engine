@@ -8,9 +8,13 @@ import {
   useAgentState,
 } from "../agents/agentStore";
 import { asRecord, fieldString } from "../agents/types";
-import { createPipelineRun, executePipelineRun } from "./pipelineRunner";
+import {
+  createPipelineRetryRun,
+  createPipelineRun,
+  executePipelineRun,
+} from "./pipelineRunner";
 import { PipelineTurnCleanupError } from "./codexRuntime";
-import type { PipelineApprovalDecision } from "./types";
+import type { PipelineApprovalDecision, PipelineRun, PipelineTask } from "./types";
 import {
   patchPipelineRun,
   patchPipelineRunEdge,
@@ -221,32 +225,14 @@ function markUnfinished(status: "cancelled" | "skipped", runId: string) {
   }
 }
 
-export async function startPipelineRun(cwd: string, taskId: string): Promise<void> {
-  const state = usePipelineState();
-  const agents = useAgentState();
-  const task = state.tasks.find((entry) => entry.id === taskId);
-  const definition = state.pipelines.find((entry) => entry.id === task?.pipelineId);
-  const prompt = task ? `# ${task.title.trim()}\n\n${task.description.trim()}` : "";
-  if (pipelineRunIsActive() || activeExecution) return;
-  if (lastStopError) {
-    setPipelineError(`${lastStopError.message} Restart Codex before starting another run.`);
-    return;
-  }
-  if (!task || !definition || state.cwd !== cwd) {
-    setPipelineError("Select a task with an available pipeline template first.");
-    return;
-  }
-  if (!prompt) {
-    setPipelineError("Describe the task this pipeline should complete.");
-    return;
-  }
-  const requiresCodex = definition.nodes.some((node) => node.type === "agent");
-  if (requiresCodex && (!agents.server?.ready || !agents.account?.account)) {
-    setPipelineError("Connect your ChatGPT account in Agents before running a pipeline.");
-    return;
-  }
+function runRequiresCodex(run: PipelineRun): boolean {
+  return run.definition.nodes.some(
+    (node) => node.type === "agent" && run.nodes[node.id]?.status !== "completed",
+  );
+}
 
-  const run = createPipelineRun(definition, cwd, prompt, task.id, task.attachments);
+async function executeManagedPipelineRun(run: PipelineRun, task: PipelineTask): Promise<void> {
+  const agents = useAgentState();
   const controller = new AbortController();
   threadOwners.clear();
   stopRequested = false;
@@ -357,6 +343,83 @@ export async function startPipelineRun(cwd: string, taskId: string): Promise<voi
   })();
   activeExecution = execution;
   await execution;
+}
+
+export async function startPipelineRun(
+  cwd: string,
+  taskId: string,
+): Promise<void> {
+  const state = usePipelineState();
+  const agents = useAgentState();
+  const task = state.tasks.find((entry) => entry.id === taskId);
+  const definition = state.pipelines.find((entry) => entry.id === task?.pipelineId);
+  const prompt = task ? pipelineTaskPrompt(task.title, task.description) : "";
+  if (pipelineRunIsActive() || activeExecution) return;
+  if (lastStopError) {
+    setPipelineError(`${lastStopError.message} Restart Codex before starting another run.`);
+    return;
+  }
+  if (!task || !definition || state.cwd !== cwd) {
+    setPipelineError("Select a task with an available pipeline template first.");
+    return;
+  }
+  if (!prompt) {
+    setPipelineError("Give the task a title before starting the pipeline.");
+    return;
+  }
+  const requiresCodex = definition.nodes.some((node) => node.type === "agent");
+  if (requiresCodex && (!agents.server?.ready || !agents.account?.account)) {
+    setPipelineError("Connect your ChatGPT account in Agents before running a pipeline.");
+    return;
+  }
+
+  const run = createPipelineRun(
+    definition,
+    cwd,
+    prompt,
+    task.id,
+    task.attachments,
+  );
+  await executeManagedPipelineRun(run, task);
+}
+
+export async function retryPipelineRunStep(
+  cwd: string,
+  runId: string,
+  nodeId: string,
+): Promise<void> {
+  const state = usePipelineState();
+  const agents = useAgentState();
+  if (pipelineRunIsActive() || activeExecution) return;
+  if (lastStopError) {
+    setPipelineError(`${lastStopError.message} Restart Codex before retrying a step.`);
+    return;
+  }
+  const previous = state.runs.find((run) => run.id === runId);
+  const task = state.tasks.find((entry) => entry.id === previous?.taskId);
+  if (!previous || !task || state.cwd !== cwd || previous.cwd !== cwd) {
+    setPipelineError("The failed pipeline step is not available in the current project.");
+    return;
+  }
+  let retry: PipelineRun;
+  try {
+    retry = createPipelineRetryRun(previous, nodeId);
+  } catch (error) {
+    setPipelineError(messageOf(error));
+    return;
+  }
+  if (runRequiresCodex(retry) && (!agents.server?.ready || !agents.account?.account)) {
+    setPipelineError("Connect your ChatGPT account in Agents before retrying this step.");
+    return;
+  }
+  await executeManagedPipelineRun(retry, task);
+}
+
+export function pipelineTaskPrompt(title: string, description: string): string {
+  const cleanTitle = title.trim();
+  const cleanDescription = description.trim();
+  if (!cleanTitle) return "";
+  return cleanDescription ? `# ${cleanTitle}\n\n${cleanDescription}` : `# ${cleanTitle}`;
 }
 
 export async function stopPipelineRun(requireSafeStop = false): Promise<void> {

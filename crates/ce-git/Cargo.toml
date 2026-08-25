@@ -7,6 +7,7 @@ edition.workspace = true
 git2 = { version = "0.20", features = ["vendored-libgit2", "vendored-openssl"] }
 serde = { workspace = true }
 anyhow = { workspace = true }
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"

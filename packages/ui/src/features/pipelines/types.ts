@@ -121,6 +121,8 @@ export interface PipelineNodeRunState {
   completedAt: number | null;
   output: string | null;
   error: string | null;
+  /** Persisted after a Git commit so a push retry never creates a duplicate commit. */
+  integrationCommit: { shortId: string; summary: string } | null;
 }
 
 export type PipelineEdgeRunStatus =

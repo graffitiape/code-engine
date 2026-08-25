@@ -8,6 +8,7 @@ import {
   respondToPipelineApproval,
   respondToPipelineConnectionApproval,
   respondToPipelineRequest,
+  retryPipelineRunStep,
   startPipelineRun,
   stopPipelineRun,
 } from "../features/pipelines/pipelineExecution";
@@ -19,12 +20,13 @@ import {
   pipelineRunIsActive,
   selectPipeline,
   selectPipelineTask,
+  selectPipelineRun,
   selectedPipeline,
   syncPipelineModels,
   updatePipelineTask,
   usePipelineState,
 } from "../features/pipelines/pipelineStore";
-import { useAgentState } from "../features/agents/agentStore";
+import { openAgentThread, useAgentState } from "../features/agents/agentStore";
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
 import { useWorkspace } from "../stores/workspace";
 import "../styles/agents.css";
@@ -126,11 +128,14 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
                       selectedPipelineId={state.selectedId}
                       projectPath={workspace.activeRoot()!}
                       run={state.run}
+                      runs={state.runs}
+                      selectedRunId={state.selectedRunId}
                       requests={state.pendingRequests}
                       codexReady={codexReady()}
                       active={active()}
                       error={state.error}
                       onSelect={selectPipelineTask}
+                      onSelectRun={selectPipelineRun}
                       onCreate={addPipelineTask}
                       onEdit={(taskId, title, description, pipelineId, attachments) => updatePipelineTask(taskId, {
                         title,
@@ -141,6 +146,13 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
                       onPipeline={(taskId, pipelineId) => updatePipelineTask(taskId, { pipelineId })}
                       onDelete={deletePipelineTask}
                       onRun={(taskId) => void startPipelineRun(workspace.activeRoot()!, taskId)}
+                      onRetryStep={(runId, nodeId) => {
+                        void retryPipelineRunStep(workspace.activeRoot()!, runId, nodeId);
+                      }}
+                      onOpenAgentThread={async (threadId, cwd) => {
+                        await openAgentThread(threadId, cwd);
+                        props.onNavigatePage("agents");
+                      }}
                       onStop={() => void stopPipelineRun()}
                       onRespond={respondToPipelineRequest}
                       onApproval={(kind, id, decision) => {

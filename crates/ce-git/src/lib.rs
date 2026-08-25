@@ -1,10 +1,15 @@
 pub mod commit;
+pub mod config;
 pub mod push;
 pub mod repository;
 pub mod staging;
 
 pub use commit::commit;
-pub use push::push;
+pub use config::{
+    repository_info, set_identity, GitIdentityInfo, GitIdentityScope, GitRemoteInfo,
+    GitRepositoryInfo,
+};
+pub use push::{check_remote_access, publish_branch, push};
 pub use repository::{
     branches, checkout_branch, recent_log, status, unified_diff, GitBranchInfo, GitDiffKind,
     GitDiffResult, GitFileStatus, GitLogEntry, GitRepoStatus,

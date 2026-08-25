@@ -15,6 +15,7 @@ import {
   normalizeImageAttachments,
   savePipelineTasks,
 } from "./pipelineTaskPersistence";
+import { loadPipelineRuns, savePipelineRuns } from "./pipelineRunPersistence";
 import type {
   PipelineAgentNode,
   PipelineConnectionMode,
@@ -42,6 +43,8 @@ interface PipelineWorkspaceState {
   tasks: PipelineTask[];
   selectedTaskId: string | null;
   run: PipelineRun | null;
+  runs: PipelineRun[];
+  selectedRunId: string | null;
   pendingRequests: CodexServerRequest[];
   error: string | null;
   announcement: string;
@@ -57,6 +60,8 @@ const [pipelineState, setPipelineState] = createStore<PipelineWorkspaceState>({
   tasks: [],
   selectedTaskId: null,
   run: null,
+  runs: [],
+  selectedRunId: null,
   pendingRequests: [],
   error: null,
   announcement: "",
@@ -71,6 +76,8 @@ const ACTIVE_RUN_STATUSES = new Set<PipelineRunStatus>([
 ]);
 let viewportPersistTimer: number | undefined;
 let pendingViewportPersist: (() => void) | null = null;
+let runPersistTimer: number | undefined;
+const RUN_PERSIST_DEBOUNCE_MS = 180;
 
 export interface PipelineCanvasSize {
   width: number;
@@ -159,6 +166,10 @@ export function selectedPipelineTask(): PipelineTask | null {
   return pipelineState.tasks.find((task) => task.id === pipelineState.selectedTaskId) ?? null;
 }
 
+export function selectedPipelineRun(): PipelineRun | null {
+  return pipelineState.runs.find((run) => run.id === pipelineState.selectedRunId) ?? null;
+}
+
 function persist() {
   if (viewportPersistTimer !== undefined) window.clearTimeout(viewportPersistTimer);
   viewportPersistTimer = undefined;
@@ -177,6 +188,22 @@ function persistTasks() {
   ) {
     setPipelineState("error", "Pipeline tasks could not be saved in this webview.");
   }
+}
+
+function persistRuns() {
+  if (runPersistTimer !== undefined) window.clearTimeout(runPersistTimer);
+  runPersistTimer = undefined;
+  if (pipelineState.cwd && !savePipelineRuns(pipelineState.cwd, pipelineState.runs)) {
+    setPipelineState("error", "Pipeline run history could not be saved in this webview.");
+  }
+}
+
+function scheduleRunPersistence() {
+  if (runPersistTimer !== undefined) window.clearTimeout(runPersistTimer);
+  runPersistTimer = window.setTimeout(() => {
+    runPersistTimer = undefined;
+    persistRuns();
+  }, RUN_PERSIST_DEBOUNCE_MS);
 }
 
 function flushViewportPersistence() {
@@ -209,6 +236,7 @@ function replaceSelected(transform: (pipeline: PipelineDefinition) => PipelineDe
 export function initializePipelines(cwd: string | null) {
   if (cwd === pipelineState.cwd) return;
   flushViewportPersistence();
+  if (runPersistTimer !== undefined) persistRuns();
   if (!cwd) {
     setPipelineState({
       cwd: null,
@@ -220,6 +248,8 @@ export function initializePipelines(cwd: string | null) {
       tasks: [],
       selectedTaskId: null,
       run: null,
+      runs: [],
+      selectedRunId: null,
       pendingRequests: [],
       error: null,
     });
@@ -227,6 +257,17 @@ export function initializePipelines(cwd: string | null) {
   }
   const loaded = loadPipelines(cwd, createStarterPipeline("Development pipeline"));
   const taskState = loadPipelineTasks(cwd, new Set(loaded.pipelines.map((pipeline) => pipeline.id)));
+  const runState = loadPipelineRuns(cwd);
+  const tasks = taskState.tasks.map((task) => {
+    const lastRun = runState.runs.find((run) => run.id === task.lastRunId);
+    return lastRun ? {
+      ...task,
+      lastRunStatus: lastRun.status,
+      lastOutput: lastRun.output,
+      lastError: lastRun.error,
+    } : task;
+  });
+  const latestRunId = taskState.tasks.find((task) => task.id === taskState.selectedId)?.lastRunId;
   setPipelineState({
     cwd,
     pipelines: loaded.pipelines,
@@ -234,14 +275,17 @@ export function initializePipelines(cwd: string | null) {
     selectedNodeId: null,
     selectedEdgeId: null,
     connectionSource: null,
-    tasks: taskState.tasks,
+    tasks,
     selectedTaskId: taskState.selectedId,
     run: null,
+    runs: runState.runs,
+    selectedRunId: runState.runs.some((run) => run.id === latestRunId) ? latestRunId ?? null : null,
     pendingRequests: [],
     error: null,
   });
   persist();
   persistTasks();
+  persistRuns();
 }
 
 export function selectPipeline(id: string) {
@@ -524,8 +568,19 @@ export const setConnectionSource = (id: string | null) => setPipelineState("conn
 export function selectPipelineTask(id: string) {
   if (!pipelineState.tasks.some((task) => task.id === id)) return;
   if (pipelineRunIsActive() && pipelineState.run?.taskId !== id) return;
-  setPipelineState("selectedTaskId", id);
+  const task = pipelineState.tasks.find((entry) => entry.id === id)!;
+  const runs = pipelineState.runs.filter((run) => run.taskId === id);
+  const selectedRunId = runs.some((run) => run.id === task.lastRunId)
+    ? task.lastRunId
+    : runs.sort((a, b) => b.createdAt - a.createdAt)[0]?.id ?? null;
+  setPipelineState({ selectedTaskId: id, selectedRunId });
   persistTasks();
+}
+
+export function selectPipelineRun(id: string) {
+  const run = pipelineState.runs.find((entry) => entry.id === id);
+  if (!run || run.taskId !== pipelineState.selectedTaskId) return;
+  setPipelineState("selectedRunId", id);
 }
 
 export function addPipelineTask(
@@ -537,8 +592,8 @@ export function addPipelineTask(
   const pipeline = pipelineState.pipelines.find((entry) => entry.id === pipelineId);
   const cleanTitle = title.trim();
   const cleanDescription = description.trim();
-  if (!pipeline || !cleanTitle || !cleanDescription) {
-    setPipelineState("error", "A task needs a title, description, and pipeline template.");
+  if (!pipeline || !cleanTitle) {
+    setPipelineState("error", "A task needs a title and pipeline template.");
     return null;
   }
   const task = createTaskRecord(cleanTitle, cleanDescription, pipelineId, attachments);
@@ -568,8 +623,8 @@ export function updatePipelineTask(
       attachments: normalizeImageAttachments(patch.attachments),
     }),
   };
-  if (cleanPatch.title === "" || cleanPatch.description === "") {
-    setPipelineState("error", "A task needs a title and description.");
+  if (cleanPatch.title === "") {
+    setPipelineState("error", "A task needs a title.");
     return false;
   }
   const pipelineExists = patch.pipelineId === undefined || pipelineState.pipelines.some(
@@ -597,8 +652,12 @@ export function deletePipelineTask(taskId: string) {
   setPipelineState({
     tasks,
     selectedTaskId: pipelineState.selectedTaskId === taskId ? tasks[0]?.id ?? null : pipelineState.selectedTaskId,
+    runs: pipelineState.runs.filter((run) => run.taskId !== taskId),
+    selectedRunId: pipelineState.runs.some((run) => run.id === pipelineState.selectedRunId && run.taskId !== taskId)
+      ? pipelineState.selectedRunId : null,
   });
   persistTasks();
+  persistRuns();
 }
 
 export function patchPipelineTaskRun(
@@ -623,16 +682,31 @@ export function clearPipelineError() {
 export const announcePipeline = (message: string) => setPipelineState("announcement", message);
 
 export function setPipelineRun(run: PipelineRun | null) {
+  const runs = run
+    ? [run, ...pipelineState.runs.filter((entry) => entry.id !== run.id)]
+    : pipelineState.runs;
   setPipelineState({
     run,
+    runs,
+    selectedRunId: run?.id ?? pipelineState.selectedRunId,
     pendingRequests: [],
     connectionSource: run ? null : pipelineState.connectionSource,
   });
+  if (run) persistRuns();
+}
+
+function replaceRun(run: PipelineRun, incremental = false) {
+  setPipelineState({
+    run,
+    runs: pipelineState.runs.map((entry) => entry.id === run.id ? run : entry),
+  });
+  if (incremental) scheduleRunPersistence();
+  else persistRuns();
 }
 
 export function patchPipelineRun(patch: Partial<PipelineRun>, expectedRunId?: string) {
   if (!pipelineState.run || (expectedRunId && pipelineState.run.id !== expectedRunId)) return;
-  setPipelineState("run", { ...pipelineState.run, ...patch, updatedAt: Date.now() });
+  replaceRun({ ...pipelineState.run, ...patch, updatedAt: Date.now() });
 }
 
 export function patchPipelineRunNode(
@@ -644,11 +718,13 @@ export function patchPipelineRunNode(
   if (expectedRunId && run?.id !== expectedRunId) return;
   const node = run?.nodes[nodeId];
   if (!run || !node) return;
-  setPipelineState("run", {
+  const incremental = Object.keys(patch).every((key) => key === "output" || key === "status") &&
+    (patch.status === undefined || patch.status === "running");
+  replaceRun({
     ...run,
     updatedAt: Date.now(),
     nodes: { ...run.nodes, [nodeId]: { ...node, ...patch, nodeId } },
-  });
+  }, incremental);
 }
 
 export function patchPipelineRunEdge(
@@ -660,7 +736,7 @@ export function patchPipelineRunEdge(
   if (expectedRunId && run?.id !== expectedRunId) return;
   const edge = run?.edges[edgeId];
   if (!run || !edge) return;
-  setPipelineState("run", {
+  replaceRun({
     ...run,
     updatedAt: Date.now(),
     edges: { ...run.edges, [edgeId]: { ...edge, ...patch, edgeId } },

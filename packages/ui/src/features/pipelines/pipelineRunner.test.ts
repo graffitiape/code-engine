@@ -104,7 +104,12 @@ vi.mock("./codexRuntime", () => {
   };
 });
 
-import { createPipelineRun, executePipelineRun } from "./pipelineRunner";
+import {
+  createPipelineRetryRun,
+  createPipelineRun,
+  executePipelineRun,
+  pipelineNodeCanRetry,
+} from "./pipelineRunner";
 
 function handoff(id: string, source: string, target: string, order = 0): PipelineEdge {
   return { id, source, target, order, mode: "automatic", approvalMessage: "" };
@@ -547,6 +552,161 @@ describe("pipeline runner", () => {
     ]);
     expect(states.git?.status).toBe("completed");
     expect(output).toContain("Pushed feature/tasks");
+  });
+
+  it("retries a failed Git step without rerunning completed Codex stages", async () => {
+    const definition = graph();
+    definition.nodes.splice(-1, 0, {
+      id: "git",
+      type: "integration",
+      name: "Commit & push",
+      position: { x: 2, y: 2 },
+      provider: "git",
+      action: "commit-push",
+      stageAll: true,
+      commitMessage: "fix: {{task}}",
+      color: "orange",
+    });
+    definition.edges.push(handoff("w-g", "writer", "git"), handoff("g-o", "git", "output", 3));
+    const failed = createPipelineRun(definition, "/project", "# Retry integration", "task-1");
+    failed.status = "failed";
+    for (const node of definition.nodes) {
+      if (node.id === "git") {
+        failed.nodes[node.id] = {
+          ...failed.nodes[node.id],
+          status: "failed",
+          attempt: 1,
+          error: "git identity is not configured",
+        };
+      } else if (node.type === "output") {
+        failed.nodes[node.id] = { ...failed.nodes[node.id], status: "skipped" };
+      } else {
+        failed.nodes[node.id] = {
+          ...failed.nodes[node.id],
+          status: "completed",
+          output: node.type === "input" ? failed.input : `saved ${node.name}`,
+          threadId: node.type === "agent" ? `original-${node.id}` : null,
+        };
+      }
+    }
+
+    expect(pipelineNodeCanRetry(failed, "git")).toBe(true);
+    const retry = createPipelineRetryRun(failed, "git");
+    expect(retry.id).not.toBe(failed.id);
+    expect(retry.nodes["reader-a"]).toMatchObject({
+      status: "completed",
+      output: "saved Reader A",
+      threadId: "original-reader-a",
+    });
+    expect(retry.nodes.git).toMatchObject({ status: "pending", attempt: 1, threadId: null });
+    expect(retry.nodes.output.status).toBe("pending");
+    expect(failed.nodes.git.status).toBe("failed");
+
+    const controller = new AbortController();
+    const states: Record<string, Partial<PipelineNodeRunState>> = {};
+    const output = await executePipelineRun(retry, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      callbacks: {
+        onRunStatus: () => undefined,
+        onNodePatch: (id, patch) => { states[id] = { ...states[id], ...patch }; },
+        onEdgePatch: () => undefined,
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    });
+
+    expect(runtime.calls).toEqual([]);
+    expect(runtime.gitCalls).toEqual([
+      "stage",
+      "commit:fix: Retry integration",
+      "push",
+      "status",
+    ]);
+    expect(states.git).toMatchObject({ status: "completed", attempt: 2 });
+    expect(output).toContain("saved Reader A");
+    expect(output).toContain("Pushed feature/tasks");
+  });
+
+  it("resumes push from a persisted commit checkpoint without committing twice", async () => {
+    const definition = graph();
+    definition.nodes.splice(-1, 0, {
+      id: "git",
+      type: "integration",
+      name: "Commit & push",
+      position: { x: 2, y: 2 },
+      provider: "git",
+      action: "commit-push",
+      stageAll: true,
+      commitMessage: "fix: {{task}}",
+      color: "orange",
+    });
+    definition.edges.push(handoff("w-g", "writer", "git"), handoff("g-o", "git", "output", 3));
+    const failed = createPipelineRun(definition, "/project", "# Resume push", "task-1");
+    failed.status = "failed";
+    for (const node of definition.nodes) {
+      if (node.id === "git") {
+        failed.nodes[node.id] = {
+          ...failed.nodes[node.id],
+          status: "failed",
+          attempt: 1,
+          output: "Committed abc1234: fix: Resume push",
+          error: "push failed",
+          integrationCommit: { shortId: "abc1234", summary: "fix: Resume push" },
+        };
+      } else if (node.type === "output") {
+        failed.nodes[node.id] = { ...failed.nodes[node.id], status: "skipped" };
+      } else {
+        failed.nodes[node.id] = {
+          ...failed.nodes[node.id],
+          status: "completed",
+          output: node.type === "input" ? failed.input : `saved ${node.name}`,
+        };
+      }
+    }
+
+    const retry = createPipelineRetryRun(failed, "git");
+    expect(retry.nodes.git.integrationCommit).toEqual({
+      shortId: "abc1234",
+      summary: "fix: Resume push",
+    });
+    const controller = new AbortController();
+    const output = await executePipelineRun(retry, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      callbacks: {
+        onRunStatus: () => undefined,
+        onNodePatch: () => undefined,
+        onEdgePatch: () => undefined,
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    });
+
+    expect(runtime.calls).toEqual([]);
+    expect(runtime.gitCalls).toEqual(["push", "status"]);
+    expect(output).toContain("Committed abc1234: fix: Resume push");
+    expect(output).toContain("Pushed feature/tasks");
+  });
+
+  it("rejects retry requests for non-failed or terminal nodes", () => {
+    const run = createPipelineRun(graph(), "/project", "Not retryable");
+    run.status = "failed";
+    run.nodes.output.status = "failed";
+
+    expect(pipelineNodeCanRetry(run, "output")).toBe(false);
+    expect(pipelineNodeCanRetry(run, "reader-a")).toBe(false);
+    expect(() => createPipelineRetryRun(run, "output")).toThrow(
+      "Only a failed executable step from a failed run can be retried.",
+    );
   });
 
   it("pauses on an approval connection before starting its target", async () => {

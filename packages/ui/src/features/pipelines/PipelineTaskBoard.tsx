@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import type { CodexServerRequest } from "../../bridge/tauri";
-import { Icon, Select } from "../../design";
+import { GitSetupDialog, Icon, Select } from "../../design";
 import type { FileLinkTarget } from "../../design/MarkdownText";
 import { PipelineTaskComposer } from "./PipelineTaskComposer";
 import { PipelineTaskRunMonitor } from "./PipelineTaskRunMonitor";
@@ -19,11 +19,14 @@ interface PipelineTaskBoardProps {
   selectedPipelineId: string | null;
   projectPath: string;
   run: PipelineRun | null;
+  runs: readonly PipelineRun[];
+  selectedRunId: string | null;
   requests: readonly CodexServerRequest[];
   codexReady: boolean;
   active: boolean;
   error: string | null;
   onSelect: (id: string) => void;
+  onSelectRun: (id: string) => void;
   onCreate: (title: string, description: string, pipelineId: string, attachments: PipelineTaskAttachment[]) => void;
   onEdit: (taskId: string, title: string, description: string, pipelineId: string, attachments: PipelineTaskAttachment[]) => boolean;
   onPipeline: (taskId: string, pipelineId: string) => void;
@@ -40,6 +43,8 @@ interface PipelineTaskBoardProps {
   onOpenTemplate: (pipelineId: string) => void;
   onClearError: () => void;
   onOpenFile: (target: FileLinkTarget) => void;
+  onOpenAgentThread: (threadId: string, cwd: string) => Promise<void>;
+  onRetryStep: (runId: string, nodeId: string) => void;
 }
 
 function taskStatus(task: PipelineTask, run: PipelineRun | null): string {
@@ -67,13 +72,20 @@ function formatRunTime(value: number | null): string {
 export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
   const [composerOpen, setComposerOpen] = createSignal(false);
   const [editingTaskId, setEditingTaskId] = createSignal<string | null>(null);
+  const [gitSetupRoot, setGitSetupRoot] = createSignal<string | null>(null);
   const selectedTask = createMemo(() =>
     props.tasks.find((task) => task.id === props.selectedTaskId) ?? null,
   );
   const selectedPipeline = createMemo(() =>
     props.pipelines.find((pipeline) => pipeline.id === selectedTask()?.pipelineId) ?? null,
   );
-  const visibleRun = () => props.run?.taskId === selectedTask()?.id ? props.run : null;
+  const taskRuns = createMemo(() => props.runs
+    .filter((run) => run.taskId === selectedTask()?.id)
+    .sort((a, b) => b.createdAt - a.createdAt));
+  const visibleRun = () => {
+    const active = props.active && props.run?.taskId === selectedTask()?.id ? props.run : null;
+    return active ?? taskRuns().find((run) => run.id === props.selectedRunId) ?? taskRuns()[0] ?? null;
+  };
   const canStart = () => props.codexReady || !selectedPipeline()?.nodes.some(
     (node) => node.type === "agent",
   );
@@ -184,8 +196,10 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
 
           <div class="pipeline-task-overview">
             <section class="pipeline-task-brief">
-              <span class="pipeline-eyebrow">BRIEF</span>
-              <p>{selectedTask()!.description}</p>
+              <Show when={selectedTask()!.description}>
+                <span class="pipeline-eyebrow">BRIEF</span>
+                <p>{selectedTask()!.description}</p>
+              </Show>
               <Show when={selectedTask()!.attachments.length}>
                 <div class="pipeline-task-attached-images">
                   <span class="pipeline-eyebrow">IMAGES</span>
@@ -219,12 +233,19 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
           <PipelineTaskRunMonitor
             pipeline={selectedPipeline()!}
             run={visibleRun()}
+            legacyRunStatus={visibleRun() ? null : selectedTask()!.lastRunStatus}
+            runs={taskRuns()}
+            onSelectRun={props.onSelectRun}
             requests={visibleRun() ? props.requests : []}
             error={props.error}
             onRespond={props.onRespond}
             onApproval={props.onApproval}
             onClearError={props.onClearError}
             onOpenFile={props.onOpenFile}
+            active={props.active}
+            onOpenAgentThread={props.onOpenAgentThread}
+            onRetryStep={props.onRetryStep}
+            onConfigureGit={setGitSetupRoot}
           />
         </section>
       </Show>
@@ -257,6 +278,15 @@ export function PipelineTaskBoard(props: PipelineTaskBoardProps) {
               return true;
             }}
             onCancel={() => setEditingTaskId(null)}
+          />
+        )}
+      </Show>
+      <Show when={gitSetupRoot()}>
+        {(root) => (
+          <GitSetupDialog
+            workspaceRoot={root()}
+            onClose={() => setGitSetupRoot(null)}
+            onSaved={() => setGitSetupRoot(null)}
           />
         )}
       </Show>

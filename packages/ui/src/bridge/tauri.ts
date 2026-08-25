@@ -34,6 +34,31 @@ export interface GitRepoStatus {
   untracked: GitFileStatus[];
 }
 
+export type GitIdentityScope = "project" | "global";
+
+export interface GitIdentityInfo {
+  name: string | null;
+  email: string | null;
+  scope: "project" | "global" | "mixed" | "missing";
+  configured: boolean;
+}
+
+export interface GitRemoteInfo {
+  name: string;
+  displayUrl: string;
+  webUrl: string | null;
+  provider: "github" | "azure-devops" | "gitlab" | "bitbucket" | "generic";
+  transport: "https" | "ssh" | "local" | "other";
+  host: string | null;
+}
+
+export interface GitRepositoryInfo {
+  identity: GitIdentityInfo;
+  remote: GitRemoteInfo | null;
+  upstream: string | null;
+  credentialHelper: string;
+}
+
 export type GitDiffKind = "staged" | "unstaged" | "untracked";
 
 export interface GitDiffResult {
@@ -187,6 +212,19 @@ export async function gitStatus(path: string): Promise<GitRepoStatus> {
   return invoke("git_status", { path });
 }
 
+export async function gitRepositoryInfo(path: string): Promise<GitRepositoryInfo> {
+  return invoke("git_repository_info", { path });
+}
+
+export async function gitSetIdentity(
+  path: string,
+  name: string,
+  email: string,
+  scope: GitIdentityScope,
+): Promise<GitRepositoryInfo> {
+  return invoke("git_set_identity", { path, name, email, scope });
+}
+
 export async function gitDiff(
   path: string,
   filePath: string | undefined,
@@ -218,6 +256,14 @@ export async function gitCommit(path: string, message: string): Promise<GitLogEn
 
 export async function gitPush(path: string): Promise<string> {
   return invoke("git_push", { path });
+}
+
+export async function gitPublishBranch(path: string): Promise<string> {
+  return invoke("git_publish_branch", { path });
+}
+
+export async function gitCheckRemoteAccess(path: string): Promise<string> {
+  return invoke("git_check_remote_access", { path });
 }
 
 export async function gitStash(path: string, message?: string): Promise<GitStashResult> {

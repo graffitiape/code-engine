@@ -4,6 +4,7 @@ import {
   PIPELINE_MAX_HANDOFF_CHARS,
   composePipelinePrompt,
   extractFinalAgentOutput,
+  pipelinePromptDisplayText,
 } from "./prompt";
 import type { PipelineAgentNode, PipelinePromptInput } from "./types";
 
@@ -90,6 +91,24 @@ describe("pipeline prompt composition", () => {
       .toBeLessThanOrEqual(PIPELINE_MAX_CONTEXT_CHARS);
     expect(outputs.every((output: string) => output.includes("[truncated by Code Engine]")))
       .toBe(true);
+  });
+
+  it("projects canonical prompts to their original task for display", () => {
+    const prompt = composePipelinePrompt(input({ originalTask: "# Title" }));
+    expect(pipelinePromptDisplayText(prompt)).toBe("# Title");
+  });
+
+  it("preserves malformed, unsupported, and ordinary user text", () => {
+    const prompt = composePipelinePrompt(input());
+    const malformed = prompt.replace('"schemaVersion": 1', '"schemaVersion":');
+    const unsupported = prompt.replace('"schemaVersion": 1', '"schemaVersion": 2');
+    const noncanonical = prompt.replace('"schemaVersion": 1', '  "schemaVersion": 1');
+    const mention = "Please inspect code-engine.pipeline-stage-context messages";
+
+    expect(pipelinePromptDisplayText(malformed)).toBe(malformed);
+    expect(pipelinePromptDisplayText(unsupported)).toBe(unsupported);
+    expect(pipelinePromptDisplayText(noncanonical)).toBe(noncanonical);
+    expect(pipelinePromptDisplayText(mention)).toBe(mention);
   });
 });
 

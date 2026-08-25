@@ -62,6 +62,7 @@ function initialNodeState(nodeId: string): PipelineNodeRunState {
     completedAt: null,
     output: null,
     error: null,
+    integrationCommit: null,
   };
 }
 
@@ -107,6 +108,48 @@ export function createPipelineRun(
   };
 }
 
+export function pipelineNodeCanRetry(run: PipelineRun, nodeId: string): boolean {
+  const node = run.definition.nodes.find((entry) => entry.id === nodeId);
+  return run.status === "failed" &&
+    Boolean(node && node.type !== "input" && node.type !== "output") &&
+    run.nodes[nodeId]?.status === "failed";
+}
+
+/**
+ * Create a new history entry that resumes a failed execution. Completed nodes
+ * retain their exact outputs and chat ownership; every unfinished branch is
+ * reset so the graph can safely converge on Result again.
+ */
+export function createPipelineRetryRun(previous: PipelineRun, nodeId: string): PipelineRun {
+  if (!pipelineNodeCanRetry(previous, nodeId)) {
+    throw new Error("Only a failed executable step from a failed run can be retried.");
+  }
+  const retry = createPipelineRun(
+    previous.definition,
+    previous.cwd,
+    previous.input,
+    previous.taskId,
+    previous.attachments,
+  );
+  retry.nodes = Object.fromEntries(previous.definition.nodes.map((node) => {
+    const state = previous.nodes[node.id];
+    if (state?.status === "completed") return [node.id, { ...state }];
+    return [node.id, {
+      ...retry.nodes[node.id],
+      attempt: state?.attempt ?? 0,
+      ...(node.type === "integration" && state?.integrationCommit ? {
+        output: state.output,
+        integrationCommit: { ...state.integrationCommit },
+      } : {}),
+    }];
+  }));
+  retry.edges = Object.fromEntries(Object.entries(retry.edges).map(([edgeId, state]) => {
+    const previousState = previous.edges[edgeId];
+    return [edgeId, previousState?.status === "approved" ? { ...previousState } : state];
+  }));
+  return retry;
+}
+
 function commitMessageFor(node: PipelineIntegrationNode, task: string): string {
   const taskSubject = task
     .split(/\r?\n/)
@@ -127,7 +170,7 @@ async function runIntegration(
   if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
   options.callbacks.onNodePatch(node.id, {
     status: "running",
-    attempt: 1,
+    attempt: (run.nodes[node.id]?.attempt ?? 0) + 1,
     startedAt: Date.now(),
     completedAt: null,
     output: null,
@@ -135,19 +178,29 @@ async function runIntegration(
   });
   try {
     if (node.provider !== "git") throw new Error(`Unsupported integration: ${node.provider}`);
-    let status = node.stageAll ? await gitStageAll(run.cwd) : await gitStatus(run.cwd);
-    if (!status.staged.length) {
-      throw new Error(node.stageAll
-        ? "There are no project changes to commit."
-        : "There are no staged changes to commit.");
+    const checkpoint = run.nodes[node.id]?.integrationCommit;
+    let output: string;
+    if (checkpoint) {
+      output = `Committed ${checkpoint.shortId}: ${checkpoint.summary}`;
+    } else {
+      const status = node.stageAll ? await gitStageAll(run.cwd) : await gitStatus(run.cwd);
+      if (!status.staged.length) {
+        throw new Error(node.stageAll
+          ? "There are no project changes to commit."
+          : "There are no staged changes to commit.");
+      }
+      const commit = await gitCommit(run.cwd, commitMessageFor(node, run.input));
+      output = `Committed ${commit.shortId}: ${commit.summary}`;
+      options.callbacks.onNodePatch(node.id, {
+        output,
+        integrationCommit: { shortId: commit.shortId, summary: commit.summary },
+      });
     }
-    const commit = await gitCommit(run.cwd, commitMessageFor(node, run.input));
-    let output = `Committed ${commit.shortId}: ${commit.summary}`;
     if (node.action === "commit-push") {
       const branch = await gitPush(run.cwd);
       output += `\nPushed ${branch} to its configured upstream.`;
     }
-    status = await gitStatus(run.cwd);
+    const status = await gitStatus(run.cwd);
     output += `\nWorking tree: ${status.staged.length + status.unstaged.length + status.untracked.length} pending change(s).`;
     outputs.set(node.id, output);
     options.callbacks.onNodePatch(node.id, {
@@ -286,13 +339,14 @@ async function runAgent(
 ): Promise<void> {
   const { callbacks } = options;
   const maxAttempts = node.retryCount + 1;
+  const previousAttempts = run.nodes[node.id]?.attempt ?? 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let ownedThreadId: string | null = null;
     let ownedTurnId: string | null = null;
     if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
     callbacks.onNodePatch(node.id, {
       status: "starting",
-      attempt,
+      attempt: previousAttempts + attempt,
       startedAt: Date.now(),
       completedAt: null,
       output: null,
@@ -380,7 +434,7 @@ async function runApproval(
   const requestApproval = options.requestApproval;
   options.callbacks.onNodePatch(node.id, {
     status: "waitingForApproval",
-    attempt: 1,
+    attempt: (run.nodes[node.id]?.attempt ?? 0) + 1,
     startedAt: Date.now(),
     completedAt: null,
     output: node.message,
@@ -498,16 +552,20 @@ export async function executePipelineRun(
   const scheduleAccess = createPipelineAccessScheduler();
   const scheduleApproval = createPipelineApprovalScheduler();
   const inputNode = run.definition.nodes.find((node) => node.type === "input")!;
-  outputs.set(inputNode.id, run.input);
-  callbacks.onNodePatch(inputNode.id, {
-    status: "completed",
-    output: run.input,
-    startedAt: Date.now(),
-    completedAt: Date.now(),
-  });
-
   const outputNode = run.definition.nodes.find((node) => node.type === "output")!;
-  executions.set(inputNode.id, Promise.resolve());
+  for (const node of run.definition.nodes) {
+    const state = run.nodes[node.id];
+    if (state?.status !== "completed") continue;
+    outputs.set(node.id, state.output ?? (node.type === "input" ? run.input : ""));
+    executions.set(node.id, Promise.resolve());
+  }
+  if (!executions.has(inputNode.id)) {
+    outputs.set(inputNode.id, run.input);
+    callbacks.onNodePatch(inputNode.id, {
+      status: "completed", output: run.input, startedAt: Date.now(), completedAt: Date.now(),
+    });
+    executions.set(inputNode.id, Promise.resolve());
+  }
 
   const executeNode = (nodeId: string): Promise<void> => {
     const existing = executions.get(nodeId);
@@ -522,6 +580,7 @@ export async function executePipelineRun(
       if (options.signal.aborted) throw new DOMException("Pipeline run stopped", "AbortError");
 
       for (const edge of incoming.filter((candidate) => candidate.mode === "approval")) {
+        if (run.edges[edge.id]?.status === "approved") continue;
         const source = nodes.get(edge.source);
         if (source) {
           await scheduleApproval(() => runApprovalConnection(edge, source, node, options));

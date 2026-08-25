@@ -12,7 +12,10 @@ import {
   gitCheckoutBranch,
   gitCommit,
   gitDiff,
+  gitPublishBranch,
+  gitPush,
   gitRecentLog,
+  gitRepositoryInfo,
   gitStageAll,
   gitStageFile,
   gitStash,
@@ -24,9 +27,11 @@ import {
   type GitDiffResult,
   type GitFileStatus,
   type GitLogEntry,
+  type GitRepositoryInfo,
   type GitRepoStatus,
 } from "../../bridge/tauri";
 import { Icon } from "../Icon";
+import { GitSetupDialog, gitProviderLabel } from "./GitSetupDialog";
 
 export interface GitPanelProps {
   onClose: () => void;
@@ -63,6 +68,7 @@ function absolutePath(root: string, relative: string): string {
 
 export function GitPanel(props: GitPanelProps) {
   const [status, setStatus] = createSignal<GitRepoStatus | null>(null);
+  const [repositoryInfo, setRepositoryInfo] = createSignal<GitRepositoryInfo | null>(null);
   const [selected, setSelected] = createSignal<SelectedFile | null>(null);
   const [diff, setDiff] = createSignal<GitDiffResult | null>(null);
   const [logs, setLogs] = createSignal<GitLogEntry[]>([]);
@@ -75,6 +81,8 @@ export function GitPanel(props: GitPanelProps) {
   const [operation, setOperation] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [notice, setNotice] = createSignal<string | null>(null);
+  const [setupOpen, setSetupOpen] = createSignal(false);
+  const [pendingSetupAction, setPendingSetupAction] = createSignal<"commit" | "stash" | null>(null);
   let statusGeneration = 0;
   let diffGeneration = 0;
 
@@ -142,6 +150,20 @@ export function GitPanel(props: GitPanelProps) {
     }
   }
 
+  async function refreshRepositoryInfo() {
+    const root = props.workspaceRoot;
+    if (!root) {
+      setRepositoryInfo(null);
+      return;
+    }
+    try {
+      const snapshot = await gitRepositoryInfo(root);
+      if (props.workspaceRoot === root) setRepositoryInfo(snapshot);
+    } catch {
+      if (props.workspaceRoot === root) setRepositoryInfo(null);
+    }
+  }
+
   async function mutate(
     label: string,
     action: (root: string) => Promise<unknown>,
@@ -157,6 +179,7 @@ export function GitPanel(props: GitPanelProps) {
       if (props.workspaceRoot !== root) return false;
       setNotice(`${label} completed.`);
       await refresh(true);
+      await refreshRepositoryInfo();
       await loadAuxiliary(activeTab());
       if (refreshEditor) {
         try {
@@ -167,7 +190,13 @@ export function GitPanel(props: GitPanelProps) {
       }
       return true;
     } catch (mutationError) {
-      setError(messageFor(mutationError));
+      const message = messageFor(mutationError);
+      setError(message);
+      if (message.toLowerCase().includes("git identity is not configured")) {
+        if (label === "Commit") setPendingSetupAction("commit");
+        if (label === "Stash") setPendingSetupAction("stash");
+        setSetupOpen(true);
+      }
       return false;
     } finally {
       setOperation(null);
@@ -175,6 +204,11 @@ export function GitPanel(props: GitPanelProps) {
   }
 
   async function commit() {
+    if (repositoryInfo() && !repositoryInfo()!.identity.configured) {
+      setPendingSetupAction("commit");
+      setSetupOpen(true);
+      return;
+    }
     const message = commitMessage();
     if (await mutate("Commit", (root) => gitCommit(root, message))) {
       setCommitMessage("");
@@ -182,6 +216,11 @@ export function GitPanel(props: GitPanelProps) {
   }
 
   async function stashAll() {
+    if (repositoryInfo() && !repositoryInfo()!.identity.configured) {
+      setPendingSetupAction("stash");
+      setSetupOpen(true);
+      return;
+    }
     if (
       await mutate(
         "Stash",
@@ -193,11 +232,40 @@ export function GitPanel(props: GitPanelProps) {
     }
   }
 
+  async function pushOrPublish() {
+    const info = repositoryInfo();
+    if (!info?.remote) {
+      setError("This repository has no remote. Add one before publishing or pushing.");
+      setSetupOpen(true);
+      return;
+    }
+    const publishing = !info.upstream;
+    await mutate(
+      publishing ? "Publish branch" : "Push",
+      (root) => publishing ? gitPublishBranch(root) : gitPush(root),
+    );
+  }
+
+  function closeSetup() {
+    setSetupOpen(false);
+    setPendingSetupAction(null);
+  }
+
+  function handleIdentitySaved(snapshot: GitRepositoryInfo) {
+    setRepositoryInfo(snapshot);
+    const pending = pendingSetupAction();
+    setSetupOpen(false);
+    setPendingSetupAction(null);
+    if (pending === "commit") queueMicrotask(() => void commit());
+    if (pending === "stash") queueMicrotask(() => void stashAll());
+  }
+
   createEffect(() => {
     void props.workspaceRoot;
     setSelected(null);
     setDiff(null);
     void refresh();
+    void refreshRepositoryInfo();
   });
 
   createEffect(() => {
@@ -315,6 +383,18 @@ export function GitPanel(props: GitPanelProps) {
             <div class="branch-pill"><Icon name="branch" /> {status()!.branch}</div>
             <span class="ahead-behind">↑{status()!.ahead} · ↓{status()!.behind}</span>
           </Show>
+          <Show when={repositoryInfo()?.remote}>
+            {(remote) => (
+              <button class="git-remote-pill" type="button" onClick={() => setSetupOpen(true)} title={remote().displayUrl}>
+                {gitProviderLabel(remote().provider)} <small>{remote().name}</small>
+              </button>
+            )}
+          </Show>
+          <Show when={repositoryInfo() && !repositoryInfo()!.identity.configured}>
+            <button class="git-identity-warning" type="button" onClick={() => setSetupOpen(true)}>
+              Set Git identity
+            </button>
+          </Show>
           <div class="tabs-row">
             <For each={TABS}>
               {(tab) => (
@@ -324,6 +404,19 @@ export function GitPanel(props: GitPanelProps) {
               )}
             </For>
           </div>
+          <Show when={repositoryInfo()?.remote}>
+            <button
+              class="git-header-action"
+              type="button"
+              disabled={Boolean(operation())}
+              onClick={() => void pushOrPublish()}
+            >
+              {operation() === "Push" || operation() === "Publish branch"
+                ? `${operation()}…`
+                : repositoryInfo()!.upstream ? "Push" : "Publish branch"}
+            </button>
+          </Show>
+          <button class="icon-btn" type="button" onClick={() => setSetupOpen(true)} title="Git setup"><Icon name="settings" /></button>
           <button class="icon-btn" disabled={loading()} onClick={() => void refresh()} title="Refresh">↻</button>
           <button class="icon-btn" onClick={props.onClose} aria-label="Close"><Icon name="close" /></button>
         </div>
@@ -411,6 +504,13 @@ export function GitPanel(props: GitPanelProps) {
           </div>
         </Show>
       </div>
+      <Show when={setupOpen() && props.workspaceRoot}>
+        <GitSetupDialog
+          workspaceRoot={props.workspaceRoot!}
+          onClose={closeSetup}
+          onSaved={handleIdentitySaved}
+        />
+      </Show>
     </>
   );
 }
