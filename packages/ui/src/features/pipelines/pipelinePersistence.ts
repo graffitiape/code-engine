@@ -10,6 +10,7 @@ import {
   type PipelinePermission,
   type PipelinePoint,
 } from "./types";
+import { migratePipelineAgentPreset } from "./agentPresets";
 
 const STORAGE_PREFIX = "ce.pipelines.v1:";
 
@@ -132,15 +133,20 @@ function parseNode(value: unknown): PipelineNode | null {
     typeof node.effort !== "string" ||
     !isPermission(node.permission)
   ) return null;
+  const preset = migratePipelineAgentPreset(
+    node.name,
+    node.instructions,
+    node.permission,
+  );
   return {
     id: node.id,
     type: "agent",
     name: node.name,
     position,
-    instructions: node.instructions,
+    instructions: preset.instructions,
     model: node.model,
     effort: node.effort,
-    permission: node.permission,
+    permission: preset.permission,
     retryCount: Number.isInteger(node.retryCount) ? Math.min(3, Math.max(0, Number(node.retryCount))) : 1,
     color: typeof node.color === "string" && node.color ? node.color : "purple",
   };

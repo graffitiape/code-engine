@@ -56,22 +56,52 @@ describe("Codex task helpers", () => {
   });
 
   it("displays a pipeline user message as its original task and keeps attachments", () => {
+    const implement = {
+      id: "implement",
+      type: "agent" as const,
+      name: "Implement",
+      position: { x: 0, y: 0 },
+      instructions: "Implement the task.",
+      model: "gpt-test",
+      effort: "high",
+      permission: "workspace-write" as const,
+      retryCount: 0,
+      color: "#7aa2f7",
+    };
     const prompt = composePipelinePrompt({
-      pipelineName: "Development",
+      definition: {
+        schemaVersion: 1,
+        id: "pipeline",
+        name: "Development",
+        viewport: { x: 0, y: 0, zoom: 1 },
+        nodes: [
+          { id: "input", type: "input", name: "Task", position: { x: 0, y: 0 } },
+          implement,
+          { id: "output", type: "output", name: "Result", position: { x: 1, y: 0 } },
+        ],
+        edges: [
+          {
+            id: "input-implement",
+            source: "input",
+            target: "implement",
+            order: 0,
+            mode: "automatic",
+            approvalMessage: "",
+          },
+          {
+            id: "implement-output",
+            source: "implement",
+            target: "output",
+            order: 0,
+            mode: "automatic",
+            approvalMessage: "",
+          },
+        ],
+      },
       runId: "run-1",
       originalTask: "# Fix the feed\n\nShow the normal task text.",
-      node: {
-        id: "implement",
-        type: "agent",
-        name: "Implement",
-        position: { x: 0, y: 0 },
-        instructions: "Implement the task.",
-        model: "gpt-test",
-        effort: "high",
-        permission: "workspace-write",
-        retryCount: 0,
-        color: "#7aa2f7",
-      },
+      node: implement,
+      globalInstructions: "Work as one pipeline stage.",
       upstreamOutputs: [],
     } satisfies PipelinePromptInput);
 

@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { getSettings, saveSettings } from "../bridge/tauri";
 import type { AppSettings } from "../bridge/types";
+import { DEFAULT_PIPELINE_AGENT_INSTRUCTIONS } from "../features/pipelines/pipelineAgentDefaults";
 
 const defaults: AppSettings = {
   theme: "tokyonight",
@@ -12,6 +13,7 @@ const defaults: AppSettings = {
   word_wrap: false,
   tab_size: 2,
   codex_path: null,
+  pipeline_agent_instructions: DEFAULT_PIPELINE_AGENT_INSTRUCTIONS,
 };
 
 const [settingsStore, setSettingsStore] = createStore<AppSettings>({ ...defaults });

@@ -33,6 +33,7 @@ export interface PipelineAgentExecution {
   pipelineName: string;
   node: PipelineAgentNode;
   prompt: string;
+  globalInstructions?: string;
   attachments: readonly PipelineTaskAttachment[];
   fallbackModel: string;
   fallbackEffort: string;
@@ -160,11 +161,19 @@ export async function executePipelineAgent(
 
   try {
     const permission = permissionForThread(request.node.permission);
+    const developerInstructions = [
+      request.globalInstructions?.trim()
+        ? `Global pipeline instructions:\n${request.globalInstructions.trim()}`
+        : "",
+      request.node.instructions.trim()
+        ? `Current stage instructions:\n${request.node.instructions.trim()}`
+        : "",
+    ].filter(Boolean).join("\n\n");
     const threadResponse = await codexThreadStart({
       cwd: request.cwd,
       model,
       ...permission,
-      developerInstructions: request.node.instructions.trim() || undefined,
+      developerInstructions: developerInstructions || undefined,
       sessionStartSource: "startup",
     });
     threadId = threadResponse.thread.id;

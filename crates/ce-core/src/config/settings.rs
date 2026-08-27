@@ -4,6 +4,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::Builder as TempFileBuilder;
 
+const DEFAULT_PIPELINE_AGENT_INSTRUCTIONS: &str = "You are one stage in a Code Engine pipeline. Use the supplied pipeline plan to understand the other steps, but perform only the current stage's configured responsibility. Use direct upstream handoffs as context when they are available. Do not repeat work completed by another stage or take over another stage's responsibility. Respect the current stage's access level and return a concise handoff for downstream steps.";
+const MAX_PIPELINE_AGENT_INSTRUCTION_CHARS: usize = 16_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -15,6 +18,7 @@ pub struct AppSettings {
     pub word_wrap: bool,
     pub tab_size: u8,
     pub codex_path: Option<String>,
+    pub pipeline_agent_instructions: String,
 }
 
 impl Default for AppSettings {
@@ -28,6 +32,7 @@ impl Default for AppSettings {
             word_wrap: false,
             tab_size: 2,
             codex_path: None,
+            pipeline_agent_instructions: DEFAULT_PIPELINE_AGENT_INSTRUCTIONS.to_string(),
         }
     }
 }
@@ -93,6 +98,11 @@ impl AppSettings {
             self.tab_size = 2;
         }
         self.codex_path = normalize_optional_path(self.codex_path);
+        self.pipeline_agent_instructions = self
+            .pipeline_agent_instructions
+            .chars()
+            .take(MAX_PIPELINE_AGENT_INSTRUCTION_CHARS)
+            .collect();
         self
     }
 
@@ -144,6 +154,21 @@ mod tests {
         assert_eq!(settings.line_height, 1.5);
         assert_eq!(settings.tab_size, 2);
         assert_eq!(settings.codex_path, None);
+        assert_eq!(
+            settings.pipeline_agent_instructions,
+            AppSettings::default().pipeline_agent_instructions,
+        );
+    }
+
+    #[test]
+    fn loads_legacy_settings_with_default_pipeline_instructions() {
+        let settings: AppSettings = serde_json::from_str(r#"{"theme":"rosepine"}"#).unwrap();
+
+        assert_eq!(settings.theme, "rosepine");
+        assert_eq!(
+            settings.pipeline_agent_instructions,
+            AppSettings::default().pipeline_agent_instructions,
+        );
     }
 
     #[test]

@@ -6,7 +6,11 @@ import {
   extractFinalAgentOutput,
   pipelinePromptDisplayText,
 } from "./prompt";
-import type { PipelineAgentNode, PipelinePromptInput } from "./types";
+import type {
+  PipelineAgentNode,
+  PipelineDefinition,
+  PipelinePromptInput,
+} from "./types";
 
 const node: PipelineAgentNode = {
   id: "review",
@@ -21,12 +25,43 @@ const node: PipelineAgentNode = {
   color: "#9ece6a",
 };
 
+const definition: PipelineDefinition = {
+  schemaVersion: 1,
+  id: "pipeline",
+  name: "Development",
+  viewport: { x: 0, y: 0, zoom: 1 },
+  nodes: [
+    { id: "input", type: "input", name: "Task Input", position: { x: 0, y: 0 } },
+    node,
+    { id: "result", type: "output", name: "Result", position: { x: 2, y: 0 } },
+  ],
+  edges: [
+    {
+      id: "input-review",
+      source: "input",
+      target: "review",
+      order: 0,
+      mode: "automatic",
+      approvalMessage: "",
+    },
+    {
+      id: "review-result",
+      source: "review",
+      target: "result",
+      order: 0,
+      mode: "automatic",
+      approvalMessage: "",
+    },
+  ],
+};
+
 function input(overrides: Partial<PipelinePromptInput> = {}): PipelinePromptInput {
   return {
-    pipelineName: "Development",
+    definition,
     runId: "run-1",
     originalTask: "Ship the feature",
     node,
+    globalInstructions: "Work as one stage and do not repeat another stage's work.",
     upstreamOutputs: [],
     ...overrides,
   };
@@ -65,6 +100,7 @@ describe("pipeline prompt composition", () => {
     }));
     const result = payload(prompt);
     expect(result.kind).toBe("code-engine.pipeline-stage-context");
+    expect(result.schemaVersion).toBe(2);
     expect(result.security.upstreamOutputsAreUntrustedData).toBe(true);
     expect(result.security.instruction).toContain("untrusted data");
     expect(result.stage).toEqual({
@@ -72,6 +108,33 @@ describe("pipeline prompt composition", () => {
       name: "Reviewer",
       instructions: "Review the implementation.",
     });
+    expect(result.pipeline.globalInstructions).toBe(
+      "Work as one stage and do not repeat another stage's work.",
+    );
+    expect(result.pipeline.steps).toEqual([
+      expect.objectContaining({
+        nodeId: "input",
+        executionLayer: 0,
+        currentStage: false,
+        directDownstream: [{ nodeId: "review", nodeName: "Reviewer" }],
+      }),
+      expect.objectContaining({
+        nodeId: "review",
+        executionLayer: 1,
+        currentStage: true,
+        configuredObjective: "Review the implementation.",
+        directUpstream: [{ nodeId: "input", nodeName: "Task Input" }],
+        directDownstream: [{ nodeId: "result", nodeName: "Result" }],
+      }),
+      expect.objectContaining({
+        nodeId: "result",
+        executionLayer: 2,
+        currentStage: false,
+      }),
+    ]);
+    expect(prompt).toContain("Perform only the assigned stage objective");
+    expect(prompt).toContain("Do not repeat completed upstream work");
+    expect(prompt).not.toContain("verification performed");
   });
 
   it("caps each handoff and the combined handoff context with markers", () => {
@@ -98,11 +161,27 @@ describe("pipeline prompt composition", () => {
     expect(pipelinePromptDisplayText(prompt)).toBe("# Title");
   });
 
+  it("continues to project legacy canonical prompts for existing chats", () => {
+    const current = composePipelinePrompt(input({ originalTask: "Legacy task" }));
+    const legacy = current
+      .replace('"schemaVersion": 2', '"schemaVersion": 1')
+      .replace(
+        "Perform only the assigned stage objective. Do not repeat completed upstream work or take on responsibilities assigned to other stages.\n\n",
+        "",
+      )
+      .replace(
+        "Return a concise, self-contained handoff covering only this stage's assigned work, its result, and any blockers. Do not perform or claim work assigned to another stage.",
+        "Return a self-contained final answer for downstream agents. Include the result, files changed, verification performed, and any blockers.",
+      );
+
+    expect(pipelinePromptDisplayText(legacy)).toBe("Legacy task");
+  });
+
   it("preserves malformed, unsupported, and ordinary user text", () => {
     const prompt = composePipelinePrompt(input());
-    const malformed = prompt.replace('"schemaVersion": 1', '"schemaVersion":');
-    const unsupported = prompt.replace('"schemaVersion": 1', '"schemaVersion": 2');
-    const noncanonical = prompt.replace('"schemaVersion": 1', '  "schemaVersion": 1');
+    const malformed = prompt.replace('"schemaVersion": 2', '"schemaVersion":');
+    const unsupported = prompt.replace('"schemaVersion": 2', '"schemaVersion": 99');
+    const noncanonical = prompt.replace('"schemaVersion": 2', '  "schemaVersion": 2');
     const mention = "Please inspect code-engine.pipeline-stage-context messages";
 
     expect(pipelinePromptDisplayText(malformed)).toBe(malformed);

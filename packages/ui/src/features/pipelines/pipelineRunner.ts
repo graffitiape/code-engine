@@ -4,6 +4,7 @@ import { orderedIncomingEdges, validatePipelineGraph } from "./graph";
 import { composePipelinePrompt } from "./prompt";
 import { executePipelineAgent, PipelineTurnCleanupError } from "./codexRuntime";
 import { newPipelineId } from "./pipelinePersistence";
+import { DEFAULT_PIPELINE_AGENT_INSTRUCTIONS } from "./pipelineAgentDefaults";
 import type {
   PipelineAgentNode,
   PipelineApprovalDecision,
@@ -37,6 +38,7 @@ export interface PipelineRunnerOptions {
   abortPeers: (reason: unknown) => void;
   fallbackModel: string;
   fallbackEffort: string;
+  pipelineAgentInstructions?: string;
   requestApproval?: (node: PipelineApprovalNode) => Promise<PipelineApprovalDecision>;
   requestConnectionApproval?: (
     edge: PipelineEdge,
@@ -355,10 +357,12 @@ async function runAgent(
     });
     try {
       const prompt = composePipelinePrompt({
-        pipelineName: run.definition.name,
+        definition: run.definition,
         runId: run.id,
         originalTask: run.input,
         node,
+        globalInstructions:
+          options.pipelineAgentInstructions ?? DEFAULT_PIPELINE_AGENT_INSTRUCTIONS,
         upstreamOutputs: upstreamFor(run.definition, node.id, outputs),
       });
       const result = await executePipelineAgent({
@@ -366,6 +370,8 @@ async function runAgent(
         pipelineName: run.definition.name,
         node,
         prompt,
+        globalInstructions:
+          options.pipelineAgentInstructions ?? DEFAULT_PIPELINE_AGENT_INSTRUCTIONS,
         attachments: run.attachments,
         fallbackModel: options.fallbackModel,
         fallbackEffort: options.fallbackEffort,

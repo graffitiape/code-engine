@@ -8,4 +8,5 @@ export interface AppSettings {
   word_wrap: boolean;
   tab_size: number;
   codex_path: string | null;
+  pipeline_agent_instructions: string;
 }

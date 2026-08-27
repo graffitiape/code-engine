@@ -1,6 +1,7 @@
 import { codexRespondServerRequest, type CodexServerRequest } from "../../bridge/tauri";
 import { registerAppCloseGuard } from "../../stores/appLifecycle";
 import { registerWorkspaceSwitchGuard } from "../../stores/workspace";
+import { useSettingsStore } from "../../stores/settings";
 import {
   subscribeCodexEvents,
   subscribeCodexServerRequests,
@@ -233,6 +234,7 @@ function runRequiresCodex(run: PipelineRun): boolean {
 
 async function executeManagedPipelineRun(run: PipelineRun, task: PipelineTask): Promise<void> {
   const agents = useAgentState();
+  const pipelineAgentInstructions = useSettingsStore().settings.pipeline_agent_instructions;
   const controller = new AbortController();
   threadOwners.clear();
   stopRequested = false;
@@ -260,6 +262,7 @@ async function executeManagedPipelineRun(run: PipelineRun, task: PipelineTask): 
         },
         fallbackModel: agents.model,
         fallbackEffort: agents.effort,
+        pipelineAgentInstructions,
         requestApproval: (node) => waitForPipelineApproval(run.id, node.id, "node", controller.signal),
         requestConnectionApproval: (edge) =>
           waitForPipelineApproval(run.id, edge.id, "edge", controller.signal),

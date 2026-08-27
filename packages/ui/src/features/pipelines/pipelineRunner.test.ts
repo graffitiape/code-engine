@@ -117,6 +117,16 @@ function handoff(id: string, source: string, target: string, order = 0): Pipelin
 
 function promptPayload(prompt: string): {
   originalTask: string;
+  pipeline: {
+    globalInstructions: string;
+    steps: Array<{
+      nodeId: string;
+      currentStage: boolean;
+      configuredObjective: string;
+      directUpstream: Array<{ nodeId: string; nodeName: string }>;
+      directDownstream: Array<{ nodeId: string; nodeName: string }>;
+    }>;
+  };
   stage: { nodeId: string; name: string; instructions: string };
   upstreamOutputs: Array<{
     nodeId: string;
@@ -305,6 +315,7 @@ describe("pipeline runner", () => {
       abortPeers: (reason) => controller.abort(reason),
       fallbackModel: "gpt-test",
       fallbackEffort: "medium",
+      pipelineAgentInstructions: "Stay within the current pipeline stage.",
       callbacks: {
         onRunStatus: () => undefined,
         onNodePatch: () => undefined,
@@ -321,6 +332,9 @@ describe("pipeline runner", () => {
       .find((entry) => entry.stage.nodeId === "implement");
     expect(implementPayload).toEqual(expect.objectContaining({
       originalTask: "Add reusable pipeline handoffs",
+      pipeline: expect.objectContaining({
+        globalInstructions: "Stay within the current pipeline stage.",
+      }),
       stage: {
         nodeId: "implement",
         name: "Implement",
@@ -333,6 +347,20 @@ describe("pipeline runner", () => {
         output: "result from Research",
       }],
     }));
+    expect(implementPayload?.pipeline.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        nodeId: "research",
+        currentStage: false,
+        configuredObjective: "Research the requested change.",
+        directDownstream: [{ nodeId: "implement", nodeName: "Implement" }],
+      }),
+      expect.objectContaining({
+        nodeId: "implement",
+        currentStage: true,
+        directUpstream: [{ nodeId: "research", nodeName: "Research" }],
+        directDownstream: [{ nodeId: "output", nodeName: "Result" }],
+      }),
+    ]));
   });
 
   it("starts a downstream reader as soon as its own dependencies complete", async () => {

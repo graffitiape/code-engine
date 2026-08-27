@@ -4,6 +4,7 @@ const runtime = vi.hoisted(() => ({
   eventObserver: null as ((event: unknown) => void) | null,
   statusObserver: null as ((status: unknown) => void) | null,
   threadRead: vi.fn(),
+  threadStart: vi.fn(),
   turnInterrupt: vi.fn(),
   turnStart: vi.fn(),
 }));
@@ -11,7 +12,7 @@ const runtime = vi.hoisted(() => ({
 vi.mock("../../bridge/tauri", () => ({
   codexThreadNameSet: vi.fn().mockResolvedValue(undefined),
   codexThreadRead: runtime.threadRead,
-  codexThreadStart: vi.fn().mockResolvedValue({ thread: { id: "thread-1" } }),
+  codexThreadStart: runtime.threadStart,
   codexTurnInterrupt: runtime.turnInterrupt,
   codexTurnStart: runtime.turnStart,
 }));
@@ -49,6 +50,7 @@ beforeEach(() => {
   runtime.eventObserver = null;
   runtime.statusObserver = null;
   runtime.threadRead.mockReset();
+  runtime.threadStart.mockReset().mockResolvedValue({ thread: { id: "thread-1" } });
   runtime.turnInterrupt.mockReset().mockResolvedValue(undefined);
   runtime.turnStart.mockReset();
 });
@@ -90,6 +92,7 @@ describe("Codex pipeline runtime reconciliation", () => {
         color: "purple",
       },
       prompt: "Inspect",
+      globalInstructions: "Work as one pipeline stage and do not repeat other stages.",
       attachments: [{ id: "/tmp/design.png", path: "/tmp/design.png", name: "design.png" }],
       fallbackModel: "gpt-test",
       fallbackEffort: "medium",
@@ -105,6 +108,15 @@ describe("Codex pipeline runtime reconciliation", () => {
 
     expect(runtime.threadRead).not.toHaveBeenCalled();
     expect(runtime.turnInterrupt).not.toHaveBeenCalled();
+    expect(runtime.threadStart).toHaveBeenCalledWith(expect.objectContaining({
+      developerInstructions: [
+        "Global pipeline instructions:",
+        "Work as one pipeline stage and do not repeat other stages.",
+        "",
+        "Current stage instructions:",
+        "Inspect the project.",
+      ].join("\n"),
+    }));
     expect(runtime.turnStart).toHaveBeenCalledWith(expect.objectContaining({
       input: [
         { type: "text", text: "Inspect", text_elements: [] },

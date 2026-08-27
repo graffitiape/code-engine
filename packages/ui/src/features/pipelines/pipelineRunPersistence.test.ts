@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pipelineAgentPreset } from "./agentPresets";
 import { createStarterPipeline } from "./pipelinePersistence";
 import { createPipelineRun } from "./pipelineRunner";
 import { loadPipelineRuns, savePipelineRuns } from "./pipelineRunPersistence";
@@ -60,6 +61,32 @@ describe("pipeline run persistence", () => {
     delete legacy.nodes[nodeId].integrationCommit;
     values.set("ce.pipeline-runs.v1:/project", JSON.stringify({ schemaVersion: 1, runs: [legacy] }));
     expect(loadPipelineRuns("/project").runs[0].nodes[nodeId].integrationCommit).toBeNull();
+  });
+
+  it("migrates untouched default instructions in historical retry snapshots", () => {
+    const definition = createStarterPipeline();
+    definition.nodes.splice(1, 0, {
+      id: "implement",
+      type: "agent",
+      name: "Implement",
+      position: { x: 620, y: 220 },
+      instructions: "Implement the task completely in the active project. Use upstream research and plans as context, preserve existing work, follow project conventions, and run focused verification for the changes you make.",
+      model: "gpt-test",
+      effort: "medium",
+      permission: "workspace-write",
+      retryCount: 1,
+      color: "purple",
+    });
+    const run = createPipelineRun(definition, "/project", "Build it", "task-1");
+    run.status = "failed";
+    savePipelineRuns("/project", [run]);
+
+    const restored = loadPipelineRuns("/project").runs[0];
+    const implement = restored.definition.nodes.find((node) => node.id === "implement")!;
+    expect(implement.type).toBe("agent");
+    if (implement.type !== "agent") throw new Error("Expected agent node");
+    expect(implement.instructions).toBe(pipelineAgentPreset("implement").instructions);
+    expect(implement.instructions).toContain("Do not run tests");
   });
 
   it("marks persisted active runs and unfinished stages as interrupted", () => {

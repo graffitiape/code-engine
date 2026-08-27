@@ -236,10 +236,11 @@ export interface PipelineUpstreamOutput {
 }
 
 export interface PipelinePromptInput {
-  pipelineName: string;
+  definition: PipelineDefinition;
   runId: string;
   originalTask: string;
   node: PipelineAgentNode;
+  globalInstructions: string;
   upstreamOutputs: PipelineUpstreamOutput[];
 }
 

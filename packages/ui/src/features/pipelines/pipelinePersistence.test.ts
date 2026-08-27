@@ -5,6 +5,7 @@ import {
   newPipelineId,
   savePipelines,
 } from "./pipelinePersistence";
+import { pipelineAgentPreset } from "./agentPresets";
 import type { PipelineDefinition } from "./types";
 
 const values = new Map<string, string>();
@@ -101,6 +102,23 @@ describe("pipeline persistence", () => {
     expect(loaded.pipelines[0].edges.every(
       (edge) => edge.mode === "automatic" && edge.approvalMessage === "",
     )).toBe(true);
+  });
+
+  it("loads saved default agents with non-overlapping current instructions", () => {
+    const pipeline = createStarterPipeline("Legacy agents");
+    addAgentStep(pipeline);
+    const agent = pipeline.nodes.find((node) => node.type === "agent")!;
+    agent.name = "Implement";
+    agent.instructions = "Implement the task completely in the active project. Use upstream research and plans as context, preserve existing work, follow project conventions, and run focused verification for the changes you make.";
+
+    savePipelines("/legacy-agents", [pipeline], pipeline.id);
+    const loaded = loadPipelines(
+      "/legacy-agents",
+      createStarterPipeline(),
+    ).pipelines[0].nodes.find((node) => node.type === "agent")!;
+
+    expect(loaded.instructions).toBe(pipelineAgentPreset("implement").instructions);
+    expect(loaded.instructions).toContain("Do not run tests");
   });
 
   it("migrates a simple legacy approval node into an approval connection", () => {

@@ -3,6 +3,7 @@ import { Icon } from "../Icon";
 import { AppLogo } from "../AppLogo";
 import { Select } from "../forms/Select";
 import { updateSettings, useSettingsStore } from "../../stores/settings";
+import { DEFAULT_PIPELINE_AGENT_INSTRUCTIONS } from "../../features/pipelines/pipelineAgentDefaults";
 
 export interface SettingsPanelProps {
   onClose: () => void;
@@ -202,6 +203,40 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 <div class="settings-note">
                   Authentication is owned by Codex. Code Engine never stores your ChatGPT tokens or API keys.
                   Restart the Agents runtime after changing this path.
+                </div>
+              </div>
+              <div class="set-group">
+                <div class="settings-group-titlebar">
+                  <h3>Pipeline agents</h3>
+                  <button
+                    type="button"
+                    class="settings-reset"
+                    onClick={() => updateSettings({
+                      pipeline_agent_instructions: DEFAULT_PIPELINE_AGENT_INSTRUCTIONS,
+                    })}
+                  >
+                    Reset default
+                  </button>
+                </div>
+                <label class="settings-field">
+                  <span>Global pipeline instructions</span>
+                  <small>
+                    Added to every pipeline agent. The current graph, other step purposes,
+                    and direct connections are supplied automatically for each run.
+                  </small>
+                  <textarea
+                    class="settings-textarea"
+                    value={settings.pipeline_agent_instructions}
+                    maxLength={16_000}
+                    rows={9}
+                    onInput={(event) => updateSettings({
+                      pipeline_agent_instructions: event.currentTarget.value,
+                    })}
+                  />
+                </label>
+                <div class="settings-note">
+                  Stage instructions remain local to each template node. Global instructions
+                  describe how every agent should behave as part of a pipeline.
                 </div>
               </div>
             </Match>
