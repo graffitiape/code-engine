@@ -21,14 +21,16 @@ import type {
 } from "./design";
 import type { FileLinkTarget } from "./design/MarkdownText";
 import { initializeWorkspace, useWorkspace } from "./stores/workspace";
-import { initializeSettings } from "./stores/settings";
+import { initializeSettings, updateSettings } from "./stores/settings";
 import { hasDirtyBuffers } from "./stores/buffers";
 import { appCloseReasons, prepareForAppClose } from "./stores/appLifecycle";
+import { createAppZoomKeydownHandler } from "./lib/appZoom";
 import {
   connectAgentListeners,
   initializeAgents,
 } from "./features/agents/agentStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isTauri } from "@tauri-apps/api/core";
 
 const AgentsPage = lazy(() => import("./pages/AgentsPage"));
@@ -118,8 +120,30 @@ const App: Component = () => {
 
   onMount(() => {
     void initializeWorkspace();
-    void initializeSettings();
     let disposed = false;
+    let removeZoomShortcut: (() => void) | undefined;
+    void initializeSettings().then((settings) => {
+      if (disposed || !isTauri()) return;
+
+      const webview = getCurrentWebview();
+      let zoomApplications = Promise.resolve();
+      const applyZoom = (zoom: number) => {
+        zoomApplications = zoomApplications
+          .catch(() => undefined)
+          .then(() => webview.setZoom(zoom));
+        void zoomApplications.catch((error) => {
+          console.error("Failed to apply app zoom", error);
+        });
+      };
+      const onAppZoomShortcut = createAppZoomKeydownHandler(settings.app_zoom, (zoom) => {
+        updateSettings({ app_zoom: zoom });
+        applyZoom(zoom);
+      });
+
+      applyZoom(settings.app_zoom);
+      window.addEventListener("keydown", onAppZoomShortcut);
+      removeZoomShortcut = () => window.removeEventListener("keydown", onAppZoomShortcut);
+    });
     const onWorkspaceShortcut = (event: KeyboardEvent) => {
       const command = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
@@ -213,6 +237,7 @@ const App: Component = () => {
     onCleanup(() => {
       disposed = true;
       disconnectAgents?.();
+      removeZoomShortcut?.();
       window.removeEventListener("keydown", onWorkspaceShortcut);
       window.removeEventListener("popstate", onPop);
       removeCloseListener?.();

@@ -466,11 +466,6 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
       );
       return;
     }
-
-    if (event.key === "0" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      fitView();
-    }
   };
 
   createEffect(() => {
@@ -628,7 +623,7 @@ export function PipelineCanvas(props: PipelineCanvasProps) {
             type="button"
             onClick={fitView}
             aria-label="Fit pipeline to view"
-            title="Fit view (⌘0)"
+            title="Fit view"
           >
             Fit
           </button>
