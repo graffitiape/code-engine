@@ -6,11 +6,13 @@ Code Engine is a local desktop code editor with a first-class Codex task surface
 
 - Switch between validated project folders from the shared title bar.
 - Open, edit, save, restore, rename, and safely remove project files without leaving the active workspace boundary.
+- Choose an editor color theme independently from the application chrome, with live switching that preserves the active buffer and undo history.
+- Opt into local language-server support for diagnostics, completion, hover details, signature help, formatting, rename, definitions, and references.
 - Restore editor tabs per project and protect unsaved or externally changed buffers.
 - Fuzzy-open files, search and replace across the project, inspect Git diffs, stage changes, commit, stash, and switch clean local branches.
 - Sign in with ChatGPT from **Agents**, choose a live Codex model and reasoning effort, stream turns, steer or interrupt work, and answer approvals or questions.
 - Choose a per-turn permission preset: read-only, workspace write, or full access.
-- Design project-specific, n8n-style **Pipelines** that connect multiple Codex agents into a validated acyclic workflow, then run the workflow with live stage status, approvals, retries, and a final handoff.
+- Design project-specific, n8n-style **Pipelines** that connect multiple Codex agents into a validated acyclic workflow, save custom agents for reuse, then run the workflow with live stage status, approvals, retries, and a final handoff.
 
 ## Requirements
 
@@ -19,6 +21,8 @@ Code Engine is a local desktop code editor with a first-class Codex task surface
 - Current stable Rust toolchain
 - [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/)
 - A recent Codex CLI with `codex app-server` support for the Agents tab
+
+Language intelligence is optional and uses language servers already installed on your computer. Code Engine can auto-detect `typescript-language-server`, `rust-analyzer`, `basedpyright-langserver`/`pyright-langserver`, and the HTML, CSS, and JSON servers from `vscode-langservers-extracted`. You can also set an executable path for each server under **Settings → Editor**.
 
 Install Codex if needed:
 
@@ -42,13 +46,16 @@ For browser-only UI work, use `pnpm dev`. Native file dialogs, filesystem access
 
 1. Open a folder from the project selector in the title bar.
 2. Use **Editor** for files, project search, source control, and settings.
-3. Open **Agents**, choose **Continue with ChatGPT**, and finish the hosted sign-in if Codex is not already authenticated.
-4. Select a model, reasoning effort, and permission preset before starting a task.
-5. Open **Pipelines** to arrange agents on the canvas, connect their ports, configure each stage, enter a development task, and run the complete workflow.
+3. Under **Settings → Editor**, choose an editor theme and optionally enable language servers for projects you trust.
+4. Open **Agents**, choose **Continue with ChatGPT**, and finish the hosted sign-in if Codex is not already authenticated.
+5. Select a model, reasoning effort, and permission preset before starting a task.
+6. Open **Pipelines** to arrange agents on the canvas, connect their ports, configure each stage, enter a development task, and run the complete workflow.
 
 Workspace mode disables network access and limits writes to the selected project. Read-only mode disables writes. Full access removes the sandbox and approval prompts; use it only for tasks you trust.
 
-Pipeline designs are saved locally per project. Read-only agents in the same stage can run concurrently; write-capable agents run exclusively so they do not edit the project at the same time. Switching projects or closing the app prompts you to stop an active pipeline safely.
+Language servers are separate local programs and run with your normal user and toolchain permissions. LSP is disabled by default; enable it only for trusted project folders.
+
+Pipeline designs are saved locally per project. An agent configured in a template can be saved from the inspector and reused from **Add step → Saved agents** across projects. Read-only agents in the same stage can run concurrently; write-capable agents run exclusively so they do not edit the project at the same time. Switching projects or closing the app prompts you to stop an active pipeline safely.
 
 ## Keyboard shortcuts
 
@@ -62,6 +69,14 @@ Pipeline designs are saved locally per project. Read-only agents in the same sta
 | `⌘/Ctrl+W` | Close active tab |
 | `⌘/Ctrl+B` | Toggle Explorer |
 | `⌘/Ctrl+,` | Settings |
+| `⌘/Ctrl++` | Zoom in |
+| `⌘/Ctrl+-` | Zoom out |
+| `⌘/Ctrl+0` | Reset app zoom |
+| `F2` | Rename symbol with the active language server |
+| `F12` | Go to definition |
+| `Shift+F12` | Find references |
+| `Shift+Alt+F` | Format document |
+| `⌘/Ctrl+Shift+Space` | Show signature help |
 
 ## Verification and packaging
 
