@@ -119,6 +119,7 @@ export interface PipelineNodeRunState {
   generation: number | null;
   startedAt: number | null;
   completedAt: number | null;
+  /** Live provider preview while running; canonical Code Engine handoff once completed. */
   output: string | null;
   error: string | null;
   /** Persisted after a Git commit so a push retry never creates a duplicate commit. */
@@ -228,11 +229,12 @@ export interface PipelineConnectionValidation {
   issue: PipelineGraphIssue | null;
 }
 
-export interface PipelineUpstreamOutput {
+export interface PipelineUpstreamHandoff {
   nodeId: string;
   nodeName: string;
   edgeOrder: number;
-  output: string;
+  /** Canonical Markdown document; a bounded copy is supplied downstream. */
+  document: string;
 }
 
 export interface PipelinePromptInput {
@@ -241,7 +243,7 @@ export interface PipelinePromptInput {
   originalTask: string;
   node: PipelineAgentNode;
   globalInstructions: string;
-  upstreamOutputs: PipelineUpstreamOutput[];
+  upstreamHandoffs: PipelineUpstreamHandoff[];
 }
 
 /** Structural subset accepted from current or future Codex thread item types. */

@@ -5,6 +5,7 @@ import { composePipelinePrompt } from "./prompt";
 import { executePipelineAgent, PipelineTurnCleanupError } from "./codexRuntime";
 import { newPipelineId } from "./pipelinePersistence";
 import { DEFAULT_PIPELINE_AGENT_INSTRUCTIONS } from "./pipelineAgentDefaults";
+import { createPipelineHandoffDocument } from "./handoff";
 import type {
   PipelineAgentNode,
   PipelineApprovalDecision,
@@ -17,7 +18,7 @@ import type {
   PipelineNodeRunState,
   PipelineRun,
   PipelineRunStatus,
-  PipelineUpstreamOutput,
+  PipelineUpstreamHandoff,
 } from "./types";
 
 export type PipelineNodeRunPatch = Partial<Omit<PipelineNodeRunState, "nodeId">>;
@@ -204,10 +205,11 @@ async function runIntegration(
     }
     const status = await gitStatus(run.cwd);
     output += `\nWorking tree: ${status.staged.length + status.unstaged.length + status.untracked.length} pending change(s).`;
-    outputs.set(node.id, output);
+    const handoff = createPipelineHandoffDocument(node.name, output);
+    outputs.set(node.id, handoff);
     options.callbacks.onNodePatch(node.id, {
       status: "completed",
-      output,
+      output: handoff,
       completedAt: Date.now(),
     });
   } catch (error) {
@@ -316,19 +318,19 @@ function outputForJoin(
     return output === undefined || !source ? [] : [{ name: source.name, output }];
   });
   if (handoffs.length === 1) return handoffs[0].output;
-  return handoffs.map((handoff) => `## ${handoff.name}\n\n${handoff.output}`).join("\n\n");
+  return handoffs.map((handoff) => handoff.output).join("\n\n---\n\n");
 }
 
-function upstreamFor(
+function upstreamHandoffsFor(
   graph: PipelineDefinition,
   nodeId: string,
   outputs: ReadonlyMap<string, string>,
-): PipelineUpstreamOutput[] {
+): PipelineUpstreamHandoff[] {
   return orderedIncomingEdges(graph, nodeId).flatMap((edge) => {
     const source = graph.nodes.find((node) => node.id === edge.source);
-    const output = outputs.get(edge.source);
-    return source && output !== undefined
-      ? [{ nodeId: source.id, nodeName: source.name, edgeOrder: edge.order, output }]
+    const document = outputs.get(edge.source);
+    return source && source.type !== "input" && document !== undefined
+      ? [{ nodeId: source.id, nodeName: source.name, edgeOrder: edge.order, document }]
       : [];
   });
 }
@@ -363,7 +365,7 @@ async function runAgent(
         node,
         globalInstructions:
           options.pipelineAgentInstructions ?? DEFAULT_PIPELINE_AGENT_INSTRUCTIONS,
-        upstreamOutputs: upstreamFor(run.definition, node.id, outputs),
+        upstreamHandoffs: upstreamHandoffsFor(run.definition, node.id, outputs),
       });
       const result = await executePipelineAgent({
         cwd: run.cwd,
@@ -389,10 +391,11 @@ async function runAgent(
         },
         onDelta: (delta) => callbacks.onDelta(node.id, delta),
       });
-      outputs.set(node.id, result.output);
+      const handoff = createPipelineHandoffDocument(node.name, result.output);
+      outputs.set(node.id, handoff);
       callbacks.onNodePatch(node.id, {
         status: "completed",
-        output: result.output,
+        output: handoff,
         error: null,
         completedAt: Date.now(),
       });
@@ -462,10 +465,11 @@ async function runApproval(
       rejectionRecorded = true;
       throw new Error(message);
     }
-    outputs.set(node.id, outputForJoin(run.definition, node.id, outputs));
+    const handoff = outputForJoin(run.definition, node.id, outputs);
+    outputs.set(node.id, handoff);
     options.callbacks.onNodePatch(node.id, {
       status: "completed",
-      output: `Approved: ${node.message}`,
+      output: handoff,
       error: null,
       completedAt: Date.now(),
     });
@@ -559,10 +563,23 @@ export async function executePipelineRun(
   const scheduleApproval = createPipelineApprovalScheduler();
   const inputNode = run.definition.nodes.find((node) => node.type === "input")!;
   const outputNode = run.definition.nodes.find((node) => node.type === "output")!;
-  for (const node of run.definition.nodes) {
+  const orderedNodeIds = validation.layers?.flat() ?? run.definition.nodes.map((node) => node.id);
+  for (const nodeId of orderedNodeIds) {
+    const node = nodes.get(nodeId);
+    if (!node) continue;
     const state = run.nodes[node.id];
     if (state?.status !== "completed") continue;
-    outputs.set(node.id, state.output ?? (node.type === "input" ? run.input : ""));
+    const reconstructedApproval = node.type === "approval"
+      ? outputForJoin(run.definition, node.id, outputs)
+      : "";
+    const persisted = reconstructedApproval || state.output ||
+      (node.type === "input" ? run.input : "");
+    outputs.set(
+      node.id,
+      (node.type === "agent" || node.type === "integration") && persisted
+        ? createPipelineHandoffDocument(node.name, persisted)
+        : persisted,
+    );
     executions.set(node.id, Promise.resolve());
   }
   if (!executions.has(inputNode.id)) {

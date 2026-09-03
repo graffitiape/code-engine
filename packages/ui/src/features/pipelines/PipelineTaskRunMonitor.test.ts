@@ -4,10 +4,13 @@ import { createPipelineRun } from "./pipelineRunner";
 import {
   openPipelineStageChat,
   pipelineStageHasChat,
+  pipelineStageHandoffDocument,
   pipelineStageNeedsGitSetup,
   pipelineStagePresentation,
+  pipelineRunOutputDescription,
 } from "./PipelineTaskRunMonitor";
 import type { PipelineAgentNode } from "./types";
+import { createPipelineHandoffDocument } from "./handoff";
 
 describe("pipeline stage chat availability", () => {
   const agent: PipelineAgentNode = {
@@ -39,6 +42,27 @@ describe("pipeline stage chat availability", () => {
     expect(pipelineStageHasChat(agent, state)).toBe(false);
   });
 
+  it("exposes only a completed executable stage output as a handoff document", () => {
+    const run = createPipelineRun(createStarterPipeline(), "/project", "Task");
+    const base = run.nodes[Object.keys(run.nodes)[0]];
+    const completed = {
+      ...base,
+      nodeId: agent.id,
+      status: "completed" as const,
+      output: createPipelineHandoffDocument("Agent", "Completed the stage."),
+    };
+
+    expect(pipelineStageHandoffDocument(agent, completed)).toBe(completed.output);
+    expect(pipelineStageHandoffDocument(agent, { ...completed, status: "running" })).toBeNull();
+    expect(pipelineStageHandoffDocument(agent, { ...completed, output: "  " })).toBeNull();
+    expect(pipelineStageHandoffDocument(agent, { ...completed, output: "Legacy raw output" }))
+      .toBeNull();
+    expect(pipelineStageHandoffDocument(
+      { id: "input", type: "input", name: "Task", position: { x: 0, y: 0 } },
+      completed,
+    )).toBeNull();
+  });
+
   it("opens a running stage chat with the exact persisted thread and project", () => {
     const onOpenAgentThread = vi.fn(async () => undefined);
 
@@ -60,6 +84,13 @@ describe("pipeline stage chat availability", () => {
       status: "idle",
       label: "Idle",
     });
+  });
+
+  it("distinguishes canonical final handoffs from legacy pipeline output", () => {
+    expect(pipelineRunOutputDescription(createPipelineHandoffDocument("Result", "Done")))
+      .toBe("Final joined handoff");
+    expect(pipelineRunOutputDescription("Legacy joined result"))
+      .toBe("Legacy pipeline output");
   });
 
   it("offers Git setup for a failed Git integration only", () => {

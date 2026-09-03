@@ -145,6 +145,7 @@
 .pipeline-node-color-cyan { --pipeline-node-accent: var(--cyan); }
 .pipeline-node-color-purple { --pipeline-node-accent: var(--purple); }
 .pipeline-node-color-green { --pipeline-node-accent: var(--green); }
+.pipeline-node-color-yellow { --pipeline-node-accent: var(--yellow); }
 .pipeline-node-color-blue { --pipeline-node-accent: var(--blue); }
 .pipeline-node-color-orange { --pipeline-node-accent: var(--orange); }
 
@@ -213,7 +214,7 @@
 .pipeline-node-heading strong {
   overflow: hidden;
   color: var(--fg-0);
-  font-size: 12px;
+  font-size: var(--ui-font-12);
   font-weight: 650;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -221,7 +222,7 @@
 }
 .pipeline-node-heading small {
   color: var(--fg-3);
-  font: 8.5px/1.2 var(--font-mono);
+  font: var(--ui-font-8-5)/1.2 var(--font-mono);
   letter-spacing: .06em;
   text-transform: uppercase;
 }
@@ -236,7 +237,7 @@
   border-radius: 99px;
   background: var(--bg-2);
   color: var(--fg-3);
-  font: 700 7.5px/1 var(--font-mono);
+  font: 700 var(--ui-font-7-5)/1 var(--font-mono);
   letter-spacing: .055em;
   text-transform: uppercase;
 }
@@ -279,7 +280,7 @@
   border-radius: 99px;
   background: var(--bg-3);
   color: var(--fg-2);
-  font: 8.5px/1 var(--font-mono);
+  font: var(--ui-font-8-5)/1 var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -291,7 +292,7 @@
   flex: 1;
   overflow: hidden;
   color: var(--fg-2);
-  font-size: 10px;
+  font-size: var(--ui-font-10);
   line-height: 1.45;
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -300,7 +301,7 @@
 }
 .pipeline-terminal-copy {
   -webkit-line-clamp: 1;
-  font-size: 9px;
+  font-size: var(--ui-font-9);
   line-height: 1.3;
 }
 
@@ -312,7 +313,7 @@
   border-radius: 5px;
   background: var(--bg-0);
   color: var(--fg-2);
-  font: 8.5px/1.35 var(--font-mono);
+  font: var(--ui-font-8-5)/1.35 var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -331,7 +332,7 @@
   border-top: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
   padding-top: 5px;
   color: var(--fg-3);
-  font: 8px/1 var(--font-mono);
+  font: var(--ui-font-8)/1 var(--font-mono);
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -469,7 +470,7 @@
   paint-order: stroke;
   stroke: var(--bg-1);
   stroke-width: 4px;
-  font: 8px var(--font-mono);
+  font: var(--ui-font-8) var(--font-mono);
   pointer-events: none;
 }
 
@@ -506,7 +507,7 @@
 .pipeline-edge-marker.approval path { fill: var(--yellow); }
 .pipeline-edge-gate { pointer-events: none; }
 .pipeline-edge-gate rect { fill: var(--bg-1); stroke: var(--yellow); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.pipeline-edge-gate text { fill: var(--yellow); font: 700 6px/1 var(--font-mono); letter-spacing: .06em; }
+.pipeline-edge-gate text { fill: var(--yellow); font: 700 var(--ui-font-6)/1 var(--font-mono); letter-spacing: .06em; }
 .pipeline-edge-gate.tone-success rect { stroke: var(--green); }
 .pipeline-edge-gate.tone-success text { fill: var(--green); }
 .pipeline-edge-gate.tone-failed rect { stroke: var(--red); }
@@ -524,15 +525,15 @@
   box-shadow: 0 18px 48px -20px black;
 }
 .pipeline-connection-type-menu header { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px 7px; }
-.pipeline-connection-type-menu header span { color: var(--fg-3); font: 700 7px/1 var(--font-mono); letter-spacing: .08em; }
-.pipeline-connection-type-menu header strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-connection-type-menu header span { color: var(--fg-3); font: 700 var(--ui-font-7)/1 var(--font-mono); letter-spacing: .08em; }
+.pipeline-connection-type-menu header strong { overflow: hidden; font-size: var(--ui-font-9); text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-connection-type-menu > button { width: 100%; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: 7px; text-align: left; }
 .pipeline-connection-type-menu > button:hover,
 .pipeline-connection-type-menu > button:focus-visible { border-color: var(--border); background: var(--bg-3); }
 .pipeline-connection-type-menu > button > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.pipeline-connection-type-menu > button strong { color: var(--fg-1); font-size: 9px; }
-.pipeline-connection-type-menu > button small { color: var(--fg-3); font-size: 8px; line-height: 1.35; }
-.pipeline-connection-choice-mark { width: 28px; height: 28px; display: grid; flex: none; place-items: center; border-radius: 7px; font: 800 12px/1 var(--font-mono); }
+.pipeline-connection-type-menu > button strong { color: var(--fg-1); font-size: var(--ui-font-9); }
+.pipeline-connection-type-menu > button small { color: var(--fg-3); font-size: var(--ui-font-8); line-height: 1.35; }
+.pipeline-connection-choice-mark { width: 28px; height: 28px; display: grid; flex: none; place-items: center; border-radius: 7px; font: 800 var(--ui-font-12)/1 var(--font-mono); }
 .pipeline-connection-choice-mark.automatic { background: color-mix(in oklab, var(--cyan) 14%, var(--bg-1)); color: var(--cyan); }
 .pipeline-connection-choice-mark.approval { background: color-mix(in oklab, var(--yellow) 15%, var(--bg-1)); color: var(--yellow); }
 
@@ -559,12 +560,12 @@
   border-radius: 5px;
   outline: none;
   color: var(--fg-2);
-  font: 600 11px var(--font-mono);
+  font: 600 var(--ui-font-11) var(--font-mono);
 }
 .pipeline-canvas-toolbar > button:hover:not(:disabled) { background: var(--bg-3); color: var(--fg-0); }
 .pipeline-canvas-toolbar > button:focus-visible { box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 55%, transparent); color: var(--fg-0); }
 .pipeline-canvas-toolbar > button:disabled { opacity: .35; cursor: default; }
-.pipeline-canvas-toolbar > button.pipeline-zoom-value { min-width: 50px; color: var(--fg-1); font-size: 9px; }
+.pipeline-canvas-toolbar > button.pipeline-zoom-value { min-width: 50px; color: var(--fg-1); font-size: var(--ui-font-9); }
 .pipeline-canvas-toolbar > span {
   width: 1px;
   height: 18px;
@@ -617,7 +618,7 @@
   gap: 6px;
   padding: 0 14px;
   color: var(--fg-3);
-  font: 9px/1 var(--font-mono);
+  font: var(--ui-font-9)/1 var(--font-mono);
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -665,7 +666,7 @@
   gap: 7px;
   padding: 0 10px;
   color: var(--fg-3);
-  font-size: 10px;
+  font-size: var(--ui-font-10);
   font-weight: 650;
 }
 .pipeline-section-bar nav button::after {
@@ -687,9 +688,9 @@
   border: 1px solid var(--border);
   border-radius: 99px;
   color: var(--fg-3);
-  font: 7.5px/1 var(--font-mono);
+  font: var(--ui-font-7-5)/1 var(--font-mono);
 }
-.pipeline-section-bar p { overflow: hidden; color: var(--fg-3); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-section-bar p { overflow: hidden; color: var(--fg-3); font-size: var(--ui-font-9); text-overflow: ellipsis; white-space: nowrap; }
 
 .pipelines-template-root {
   flex: 1;
@@ -703,7 +704,7 @@
 
 .pipeline-eyebrow {
   color: var(--fg-3);
-  font: 700 8px/1 var(--font-mono);
+  font: 700 var(--ui-font-8)/1 var(--font-mono);
   letter-spacing: .11em;
   text-transform: uppercase;
 }
@@ -741,7 +742,7 @@
 .pipeline-rail-head strong,
 .pipeline-inspector-head strong {
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--ui-font-12);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -787,7 +788,7 @@
   width: 20px;
   flex: none;
   color: var(--fg-3);
-  font: 8px/1 var(--font-mono);
+  font: var(--ui-font-8)/1 var(--font-mono);
 }
 .pipeline-rail-copy {
   min-width: 0;
@@ -802,8 +803,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pipeline-rail-copy strong { color: var(--fg-1); font-size: 10.5px; font-weight: 600; }
-.pipeline-rail-copy small { color: var(--fg-3); font: 8px/1.2 var(--font-mono); }
+.pipeline-rail-copy strong { color: var(--fg-1); font-size: var(--ui-font-10-5); font-weight: 600; }
+.pipeline-rail-copy small { color: var(--fg-3); font: var(--ui-font-8)/1.2 var(--font-mono); }
 .pipeline-rail-led {
   width: 5px;
   height: 5px;
@@ -825,7 +826,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg-2);
-  font-size: 9px;
+  font-size: var(--ui-font-9);
 }
 .pipeline-rail-actions button:hover:not(:disabled) { background: var(--bg-3); color: var(--fg-0); }
 .pipeline-rail-actions button.danger:hover:not(:disabled) { color: var(--red); border-color: color-mix(in oklab, var(--red) 38%, var(--border)); }
@@ -859,16 +860,16 @@
 .pipeline-workspace-head .pipeline-eyebrow { grid-column: 1 / -1; }
 .pipeline-workspace-head strong {
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--ui-font-12);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pipeline-workspace-head small { color: var(--fg-3); font: 8.5px/1 var(--font-mono); white-space: nowrap; }
+.pipeline-workspace-head small { color: var(--fg-3); font: var(--ui-font-8-5)/1 var(--font-mono); white-space: nowrap; }
 .pipeline-workspace-actions { min-width: 0; display: flex; align-items: center; gap: 8px; }
 .pipeline-connect-hint {
   overflow: hidden;
   color: var(--cyan);
-  font: 8px/1.2 var(--font-mono);
+  font: var(--ui-font-8)/1.2 var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -886,7 +887,7 @@
   border-radius: 6px;
   background: color-mix(in oklab, var(--purple) 16%, var(--bg-2));
   color: var(--fg-0);
-  font-size: 9.5px;
+  font-size: var(--ui-font-9-5);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -914,7 +915,7 @@
   display: block;
   padding: 4px 7px 7px;
   color: var(--fg-3);
-  font: 700 7.5px/1 var(--font-mono);
+  font: 700 var(--ui-font-7-5)/1 var(--font-mono);
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -936,6 +937,48 @@
   text-align: left;
   white-space: normal;
 }
+.pipeline-saved-agent-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 3px;
+}
+.pipeline-saved-agent-add {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg-1);
+  text-align: left;
+}
+.pipeline-saved-agent-add > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+.pipeline-saved-agent-delete {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg-3);
+}
+.pipeline-saved-agent-add:hover:not(:disabled),
+.pipeline-saved-agent-add:focus-visible,
+.pipeline-saved-agent-delete:hover,
+.pipeline-saved-agent-delete:focus-visible { border-color: var(--border); background: var(--bg-3); }
+.pipeline-saved-agent-delete:hover,
+.pipeline-saved-agent-delete:focus-visible { color: var(--red); }
+.pipeline-saved-agent-add:disabled { opacity: .38; cursor: default; }
 .pipeline-add-step-popover > button:hover:not(:disabled),
 .pipeline-add-step-popover > button:focus-visible { border-color: var(--border); background: var(--bg-3); }
 .pipeline-add-step-popover > button:disabled { opacity: .38; cursor: default; }
@@ -950,16 +993,48 @@
 }
 .pipeline-add-step-popover strong,
 .pipeline-add-step-popover small { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-.pipeline-add-step-popover strong { font-size: 9.5px; }
-.pipeline-add-step-popover small { color: var(--fg-3); font-size: 8px; line-height: 1.35; }
+.pipeline-add-step-popover strong { font-size: var(--ui-font-9-5); }
+.pipeline-add-step-popover small { color: var(--fg-3); font-size: var(--ui-font-8); line-height: 1.35; }
 .pipeline-add-step-icon { width: 30px; height: 30px; display: grid; flex: none; place-items: center; border-radius: 7px; }
 .pipeline-add-step-icon.cyan { background: color-mix(in oklab, var(--cyan) 14%, var(--bg-1)); color: var(--cyan); }
 .pipeline-add-step-icon.purple { background: color-mix(in oklab, var(--purple) 15%, var(--bg-1)); color: var(--purple); }
 .pipeline-add-step-icon.green { background: color-mix(in oklab, var(--green) 14%, var(--bg-1)); color: var(--green); }
 .pipeline-add-step-icon.blue { background: color-mix(in oklab, var(--blue) 14%, var(--bg-1)); color: var(--blue); }
 .pipeline-add-step-icon.yellow { background: color-mix(in oklab, var(--yellow) 14%, var(--bg-1)); color: var(--yellow); }
+.pipeline-add-step-icon.orange { background: color-mix(in oklab, var(--orange) 14%, var(--bg-1)); color: var(--orange); }
 .pipeline-add-step-icon.git { background: color-mix(in oklab, var(--orange) 14%, var(--bg-1)); color: var(--orange); }
 .pipeline-canvas-region { min-width: 0; min-height: 0; position: relative; display: flex; overflow: hidden; }
+.pipeline-template-error {
+  position: absolute;
+  z-index: 55;
+  top: 10px;
+  left: 50%;
+  width: min(460px, calc(100% - 28px));
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 11px;
+  border: 1px solid color-mix(in oklab, var(--red) 45%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--bg-2) 94%, var(--red));
+  box-shadow: 0 12px 28px -18px black;
+  color: var(--fg-1);
+  font-size: var(--ui-font-9);
+  line-height: 1.4;
+  transform: translateX(-50%);
+}
+.pipeline-template-error > span { min-width: 0; flex: 1; }
+.pipeline-template-error > button {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--fg-2);
+}
+.pipeline-template-error > button:hover { background: var(--bg-3); color: var(--fg-0); }
 
 /* ===== Inspector ===== */
 .pipeline-inspector {
@@ -980,11 +1055,11 @@
 .pipeline-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 13px; }
 .pipeline-field > span {
   color: var(--fg-2);
-  font: 700 8px/1 var(--font-mono);
+  font: 700 var(--ui-font-8)/1 var(--font-mono);
   letter-spacing: .05em;
   text-transform: uppercase;
 }
-.pipeline-field > small { color: var(--fg-3); font-size: 8.5px; line-height: 1.45; }
+.pipeline-field > small { color: var(--fg-3); font-size: var(--ui-font-8-5); line-height: 1.45; }
 .pipeline-field input,
 .pipeline-field textarea {
   width: 100%;
@@ -993,7 +1068,7 @@
   outline: none;
   background: var(--bg-1);
   color: var(--fg-0);
-  font: 10.5px/1.5 var(--font-ui);
+  font: var(--ui-font-10-5)/1.5 var(--font-ui);
 }
 .pipeline-field input { height: 32px; padding: 0 9px; }
 .pipeline-field textarea { min-height: 104px; padding: 8px 9px; resize: vertical; }
@@ -1002,13 +1077,29 @@
 .pipeline-field input:disabled,
 .pipeline-field textarea:disabled { opacity: .55; cursor: not-allowed; }
 .pipeline-inspector-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pipeline-save-agent-button {
+  width: 100%;
+  min-height: 30px;
+  margin-bottom: 8px;
+  border: 1px solid color-mix(in oklab, var(--purple) 36%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--purple) 8%, transparent);
+  color: var(--fg-1);
+  font-size: var(--ui-font-9);
+}
+.pipeline-save-agent-button:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--purple) 58%, var(--border));
+  background: color-mix(in oklab, var(--purple) 15%, transparent);
+  color: var(--fg-0);
+}
+.pipeline-save-agent-button:disabled { opacity: .48; cursor: default; }
 .pipeline-danger-button {
   width: 100%;
   min-height: 30px;
   border: 1px solid color-mix(in oklab, var(--red) 30%, var(--border));
   border-radius: 6px;
   color: var(--red);
-  font-size: 9px;
+  font-size: var(--ui-font-9);
 }
 .pipeline-danger-button:hover:not(:disabled) { background: color-mix(in oklab, var(--red) 9%, transparent); }
 .pipeline-danger-button:disabled { opacity: .35; cursor: default; }
@@ -1019,12 +1110,12 @@
   border: 1px solid var(--border);
   border-radius: 99px;
   color: var(--cyan);
-  font: 700 8px/1 var(--font-mono);
+  font: 700 var(--ui-font-8)/1 var(--font-mono);
   letter-spacing: .08em;
   text-transform: uppercase;
 }
 .pipeline-terminal-badge.output { color: var(--green); }
-.pipeline-inspector-note { margin: 0 0 14px; color: var(--fg-2); font-size: 9.5px; line-height: 1.55; }
+.pipeline-inspector-note { margin: 0 0 14px; color: var(--fg-2); font-size: var(--ui-font-9-5); line-height: 1.55; }
 .pipeline-connection-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -1035,7 +1126,7 @@
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--bg-1);
-  font-size: 9px;
+  font-size: var(--ui-font-9);
 }
 .pipeline-connection-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-connection-summary span { color: var(--cyan); }
@@ -1051,16 +1142,16 @@
   border-radius: 7px;
   background: var(--bg-1);
 }
-.pipeline-stat-grid strong { color: var(--cyan); font: 600 18px/1 var(--font-mono); }
-.pipeline-stat-grid span { color: var(--fg-3); font: 8px/1 var(--font-mono); text-transform: uppercase; }
+.pipeline-stat-grid strong { color: var(--cyan); font: 600 var(--ui-font-18)/1 var(--font-mono); }
+.pipeline-stat-grid span { color: var(--fg-3); font: var(--ui-font-8)/1 var(--font-mono); text-transform: uppercase; }
 .pipeline-inspector-guide {
   padding: 11px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: color-mix(in oklab, var(--blue) 5%, var(--bg-1));
 }
-.pipeline-inspector-guide strong { font-size: 10px; }
-.pipeline-inspector-guide ol { margin: 8px 0 0 16px; color: var(--fg-2); font-size: 9px; line-height: 1.65; }
+.pipeline-inspector-guide strong { font-size: var(--ui-font-10); }
+.pipeline-inspector-guide ol { margin: 8px 0 0 16px; color: var(--fg-2); font-size: var(--ui-font-9); line-height: 1.65; }
 .pipeline-integration-card {
   display: flex;
   align-items: center;
@@ -1073,15 +1164,15 @@
 }
 .pipeline-integration-logo { width: 30px; height: 30px; display: grid; flex: none; place-items: center; border-radius: 7px; background: color-mix(in oklab, var(--orange) 18%, var(--bg-2)); color: var(--orange); }
 .pipeline-integration-card > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.pipeline-integration-card strong { font-size: 10px; }
-.pipeline-integration-card small { color: var(--fg-3); font-size: 8px; line-height: 1.35; }
+.pipeline-integration-card strong { font-size: var(--ui-font-10); }
+.pipeline-integration-card small { color: var(--fg-3); font-size: var(--ui-font-8); line-height: 1.35; }
 .pipeline-approval-card { border-color: color-mix(in oklab, var(--yellow) 30%, var(--border)); background: color-mix(in oklab, var(--yellow) 7%, var(--bg-1)); }
 .pipeline-approval-card .pipeline-integration-logo { background: color-mix(in oklab, var(--yellow) 18%, var(--bg-2)); color: var(--yellow); }
 .pipeline-integration-check { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 13px; padding: 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-1); }
 .pipeline-integration-check input { margin-top: 2px; accent-color: var(--orange); }
 .pipeline-integration-check > span { display: flex; flex-direction: column; gap: 3px; }
-.pipeline-integration-check strong { font-size: 9px; }
-.pipeline-integration-check small { color: var(--fg-3); font-size: 8px; line-height: 1.4; }
+.pipeline-integration-check strong { font-size: var(--ui-font-9); }
+.pipeline-integration-check small { color: var(--fg-3); font-size: var(--ui-font-8); line-height: 1.4; }
 
 /* ===== Run dock ===== */
 .pipeline-run-dock {
@@ -1104,7 +1195,7 @@
 }
 .pipeline-run-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .pipeline-run-heading > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.pipeline-run-heading strong { overflow: hidden; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-run-heading strong { overflow: hidden; font-size: var(--ui-font-10-5); text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-run-status {
   flex: none;
   display: inline-flex;
@@ -1114,7 +1205,7 @@
   border: 1px solid var(--border);
   border-radius: 99px;
   color: var(--fg-3);
-  font: 700 7.5px/1 var(--font-mono);
+  font: 700 var(--ui-font-7-5)/1 var(--font-mono);
   text-transform: uppercase;
 }
 .pipeline-run-status > span { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
@@ -1135,13 +1226,13 @@
   outline: none;
   background: var(--bg-1);
   color: var(--fg-0);
-  font: 10.5px/1.45 var(--font-ui);
+  font: var(--ui-font-10-5)/1.45 var(--font-ui);
 }
 .pipeline-run-compose textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 15%, transparent); }
 .pipeline-run-compose textarea:disabled { opacity: .58; cursor: not-allowed; }
 .pipeline-run-actions { min-width: 0; display: flex; align-items: center; gap: 8px; }
-.pipeline-run-actions > span { min-width: 0; overflow: hidden; color: var(--fg-3); font: 8px/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
-.pipeline-run-button kbd { color: var(--fg-3); font: 8px/1 var(--font-mono); }
+.pipeline-run-actions > span { min-width: 0; overflow: hidden; color: var(--fg-3); font: var(--ui-font-8)/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-run-button kbd { color: var(--fg-3); font: var(--ui-font-8)/1 var(--font-mono); }
 .pipeline-stop-button { border-color: color-mix(in oklab, var(--red) 42%, var(--border)); background: color-mix(in oklab, var(--red) 10%, var(--bg-2)); color: var(--red); }
 .pipeline-secondary-button { border-color: var(--border-strong); background: var(--bg-2); color: var(--fg-1); }
 
@@ -1167,8 +1258,8 @@
 .pipeline-stage-chip > span { width: 5px; height: 5px; grid-row: 1 / 3; border-radius: 50%; background: var(--fg-3); }
 .pipeline-stage-chip strong,
 .pipeline-stage-chip small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pipeline-stage-chip strong { color: var(--fg-1); font-size: 8.5px; }
-.pipeline-stage-chip small { color: var(--fg-3); font: 7px/1 var(--font-mono); text-transform: uppercase; }
+.pipeline-stage-chip strong { color: var(--fg-1); font-size: var(--ui-font-8-5); }
+.pipeline-stage-chip small { color: var(--fg-3); font: var(--ui-font-7)/1 var(--font-mono); text-transform: uppercase; }
 .pipeline-stage-chip.stage-running > span,
 .pipeline-stage-chip.stage-starting > span { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
 .pipeline-stage-chip.stage-waitingForApproval > span { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
@@ -1191,14 +1282,14 @@
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
 }
-.pipeline-stage-details header strong { font-size: 9px; }
-.pipeline-stage-details header span { color: var(--fg-3); font: 7.5px/1 var(--font-mono); text-transform: uppercase; }
+.pipeline-stage-details header strong { font-size: var(--ui-font-9); }
+.pipeline-stage-details header span { color: var(--fg-3); font: var(--ui-font-7-5)/1 var(--font-mono); text-transform: uppercase; }
 .pipeline-stage-details pre {
   max-height: 96px;
   overflow: auto;
   padding: 7px 8px;
   color: var(--fg-1);
-  font: 8.5px/1.45 var(--font-mono);
+  font: var(--ui-font-8-5)/1.45 var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1207,12 +1298,81 @@
   overflow: auto;
   padding: 9px 10px 11px;
   color: var(--fg-1);
-  font-size: 9px;
+  font-size: var(--ui-font-9);
   line-height: 1.55;
   user-select: text;
 }
+.pipeline-handoff-document {
+  margin-top: 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--purple) 26%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--purple) 4%, var(--bg-1));
+}
+.pipeline-handoff-document > summary {
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  color: var(--purple);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.pipeline-handoff-document > summary::-webkit-details-marker { display: none; }
+.pipeline-handoff-document > summary::after {
+  content: "›";
+  flex: none;
+  color: var(--fg-3);
+  font: var(--ui-font-12)/1 var(--font-mono);
+  transform: rotate(90deg);
+  transition: transform .12s ease;
+}
+.pipeline-handoff-document:not([open]) > summary::after { transform: rotate(0deg); }
+.pipeline-handoff-document > summary > span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 700 var(--ui-font-8)/1 var(--font-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.pipeline-handoff-document > summary > small {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--fg-3);
+  font: var(--ui-font-7-5)/1.2 var(--font-mono);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pipeline-handoff-document-output {
+  max-height: 320px;
+  overflow: auto;
+  padding: 2px 10px 11px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-1);
+  font-size: var(--ui-font-9);
+  line-height: 1.55;
+  user-select: text;
+}
+.pipeline-stage-details > .pipeline-handoff-document {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.pipeline-approval-request .pipeline-handoff-document {
+  max-width: 680px;
+  margin-top: 5px;
+}
+.pipeline-approval-request .pipeline-handoff-document-output { max-height: 220px; }
 .pipeline-stage-chat-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border); }
-.pipeline-stage-chat-link small { color: var(--fg-3); font-size: 9px; }
+.pipeline-stage-chat-link small { color: var(--fg-3); font-size: var(--ui-font-9); }
 .pipeline-validation-message,
 .pipeline-run-error {
   display: flex;
@@ -1224,7 +1384,7 @@
   border-radius: 6px;
   background: color-mix(in oklab, var(--yellow) 6%, var(--bg-1));
   color: var(--fg-2);
-  font-size: 8.5px;
+  font-size: var(--ui-font-8-5);
 }
 .pipeline-validation-message { display: block; }
 .pipeline-validation-message summary { color: var(--yellow); font-weight: 650; line-height: 1.35; cursor: pointer; }
@@ -1234,11 +1394,11 @@
 .pipeline-run-error span { min-width: 0; flex: 1; }
 .pipeline-run-error button { width: 24px; height: 24px; border-radius: 4px; }
 .pipeline-run-error button:hover { background: color-mix(in oklab, var(--red) 14%, transparent); }
-.pipeline-monitor-empty { height: calc(100% - 48px); display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--fg-3); font-size: 9px; text-align: center; }
+.pipeline-monitor-empty { height: calc(100% - 48px); display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--fg-3); font-size: var(--ui-font-9); text-align: center; }
 .pipeline-result { margin-top: 5px; border: 1px solid color-mix(in oklab, var(--green) 25%, var(--border)); border-radius: 6px; background: var(--bg-1); }
-.pipeline-result summary { padding: 7px 8px; color: var(--green); font: 700 8px/1 var(--font-mono); cursor: pointer; text-transform: uppercase; }
-.pipeline-result pre { max-height: 125px; overflow: auto; padding: 0 8px 8px; color: var(--fg-1); font: 8.5px/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.pipeline-result-output { max-height: 320px; overflow: auto; padding: 2px 10px 11px; color: var(--fg-1); font-size: 9px; line-height: 1.55; user-select: text; }
+.pipeline-result summary { padding: 7px 8px; color: var(--green); font: 700 var(--ui-font-8)/1 var(--font-mono); cursor: pointer; text-transform: uppercase; }
+.pipeline-result pre { max-height: 125px; overflow: auto; padding: 0 8px 8px; color: var(--fg-1); font: var(--ui-font-8-5)/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pipeline-result-output { max-height: 320px; overflow: auto; padding: 2px 10px 11px; color: var(--fg-1); font-size: var(--ui-font-9); line-height: 1.55; user-select: text; }
 .pipeline-request-stack { display: grid; gap: 7px; margin-top: 5px; }
 .pipeline-request-stack .agent-request-card { margin: 0; }
 .pipeline-approval-request {
@@ -1255,10 +1415,10 @@
 }
 .pipeline-approval-request-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; background: color-mix(in oklab, var(--yellow) 17%, var(--bg-2)); color: var(--yellow); }
 .pipeline-approval-request > div:nth-child(2) { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.pipeline-approval-request strong { color: var(--fg-0); font-size: 10px; }
-.pipeline-approval-request p { color: var(--fg-2); font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.pipeline-approval-request strong { color: var(--fg-0); font-size: var(--ui-font-10); }
+.pipeline-approval-request p { color: var(--fg-2); font-size: var(--ui-font-9); line-height: 1.45; overflow-wrap: anywhere; }
 .pipeline-approval-request-actions { display: flex; align-items: center; gap: 7px; }
-.pipeline-approval-request-actions button { min-height: 31px; padding: 0 10px; border-radius: 6px; font-size: 8.5px; white-space: nowrap; }
+.pipeline-approval-request-actions button { min-height: 31px; padding: 0 10px; border-radius: 6px; font-size: var(--ui-font-8-5); white-space: nowrap; }
 .pipeline-approval-reject { border: 1px solid color-mix(in oklab, var(--red) 34%, var(--border)); color: var(--red); }
 .pipeline-approval-reject:hover { background: color-mix(in oklab, var(--red) 9%, transparent); }
 
@@ -1291,7 +1451,7 @@
   border-bottom: 1px solid var(--border);
 }
 .pipeline-task-rail > header > div { display: flex; flex-direction: column; gap: 5px; }
-.pipeline-task-rail > header strong { font-size: 14px; }
+.pipeline-task-rail > header strong { font-size: var(--ui-font-14); }
 .pipeline-task-list { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
 .pipeline-task-item {
   width: 100%;
@@ -1319,9 +1479,9 @@
 .pipeline-task-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .pipeline-task-copy strong,
 .pipeline-task-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pipeline-task-copy strong { color: var(--fg-1); font-size: 10.5px; font-weight: 620; }
-.pipeline-task-copy small { color: var(--fg-3); font: 8px/1 var(--font-mono); }
-.pipeline-task-run-count { color: var(--fg-3); font: 7.5px/1 var(--font-mono); }
+.pipeline-task-copy strong { color: var(--fg-1); font-size: var(--ui-font-10-5); font-weight: 620; }
+.pipeline-task-copy small { color: var(--fg-3); font: var(--ui-font-8)/1 var(--font-mono); }
+.pipeline-task-run-count { color: var(--fg-3); font: var(--ui-font-7-5)/1 var(--font-mono); }
 .pipeline-task-empty-card {
   width: 100%;
   min-height: 120px;
@@ -1337,9 +1497,9 @@
   text-align: center;
 }
 .pipeline-task-empty-card:hover { border-color: color-mix(in oklab, var(--purple) 50%, var(--border)); background: color-mix(in oklab, var(--purple) 6%, transparent); color: var(--fg-1); }
-.pipeline-task-empty-card strong { color: var(--fg-1); font-size: 10px; }
-.pipeline-task-empty-card small { max-width: 180px; font-size: 8.5px; line-height: 1.4; }
-.pipeline-task-rail > footer { display: flex; justify-content: space-between; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--border); color: var(--fg-3); font: 7.5px/1 var(--font-mono); text-transform: uppercase; }
+.pipeline-task-empty-card strong { color: var(--fg-1); font-size: var(--ui-font-10); }
+.pipeline-task-empty-card small { max-width: 180px; font-size: var(--ui-font-8-5); line-height: 1.4; }
+.pipeline-task-rail > footer { display: flex; justify-content: space-between; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--border); color: var(--fg-3); font: var(--ui-font-7-5)/1 var(--font-mono); text-transform: uppercase; }
 
 .pipeline-task-welcome {
   display: flex;
@@ -1350,8 +1510,8 @@
   padding: 32px;
   text-align: center;
 }
-.pipeline-task-welcome h1 { font-size: 22px; letter-spacing: -.025em; }
-.pipeline-task-welcome p { max-width: 490px; color: var(--fg-2); font-size: 11px; line-height: 1.6; }
+.pipeline-task-welcome h1 { font-size: var(--ui-font-22); letter-spacing: -.025em; }
+.pipeline-task-welcome p { max-width: 490px; color: var(--fg-2); font-size: var(--ui-font-11); line-height: 1.6; }
 
 .pipeline-task-detail { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; }
 .pipeline-task-detail-head {
@@ -1366,34 +1526,34 @@
 }
 .pipeline-task-detail-head > div:first-child { min-width: 0; display: grid; grid-template-columns: auto auto; align-items: center; gap: 6px 10px; }
 .pipeline-task-detail-head .pipeline-eyebrow { grid-column: 1 / -1; }
-.pipeline-task-detail-head h1 { overflow: hidden; font-size: 17px; letter-spacing: -.015em; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-task-detail-head h1 { overflow: hidden; font-size: var(--ui-font-17); letter-spacing: -.015em; text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-task-detail-head > div:last-child { display: flex; align-items: center; gap: 7px; }
-.pipeline-task-delete { min-height: 30px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; color: var(--fg-3); font-size: 9px; }
+.pipeline-task-delete { min-height: 30px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; color: var(--fg-3); font-size: var(--ui-font-9); }
 .pipeline-task-delete:hover:not(:disabled) { border-color: color-mix(in oklab, var(--red) 28%, var(--border)); background: color-mix(in oklab, var(--red) 8%, transparent); color: var(--red); }
 .pipeline-task-delete:disabled { opacity: .35; }
 .pipeline-task-overview { min-width: 0; display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(240px, .8fr); border-bottom: 1px solid var(--border); }
 .pipeline-task-brief { min-width: 0; padding: 16px 18px; }
-.pipeline-task-brief p { max-height: 104px; overflow: auto; margin-top: 9px; color: var(--fg-1); font-size: 10.5px; line-height: 1.6; white-space: pre-wrap; user-select: text; }
+.pipeline-task-brief p { max-height: 104px; overflow: auto; margin-top: 9px; color: var(--fg-1); font-size: var(--ui-font-10-5); line-height: 1.6; white-space: pre-wrap; user-select: text; }
 .pipeline-task-attached-images { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
-.pipeline-task-attached-images > span:not(.pipeline-eyebrow) { max-width: 220px; overflow: hidden; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2); color: var(--fg-2); font: 8.5px/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-task-attached-images > span:not(.pipeline-eyebrow) { max-width: 220px; overflow: hidden; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2); color: var(--fg-2); font: var(--ui-font-8-5)/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-task-config { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; padding: 13px 15px; border-left: 1px solid var(--border); background: color-mix(in oklab, var(--bg-2) 72%, transparent); }
 .pipeline-task-config > div:first-child { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.pipeline-task-config > div:first-child > span { color: var(--fg-3); font: 700 7.5px/1 var(--font-mono); text-transform: uppercase; }
-.pipeline-task-config > button { align-self: end; height: 32px; display: inline-flex; align-items: center; gap: 3px; padding: 0 7px; color: var(--fg-2); font-size: 8.5px; white-space: nowrap; }
+.pipeline-task-config > div:first-child > span { color: var(--fg-3); font: 700 var(--ui-font-7-5)/1 var(--font-mono); text-transform: uppercase; }
+.pipeline-task-config > button { align-self: end; height: 32px; display: inline-flex; align-items: center; gap: 3px; padding: 0 7px; color: var(--fg-2); font-size: var(--ui-font-8-5); white-space: nowrap; }
 .pipeline-task-config > button:hover { color: var(--fg-0); }
 .pipeline-task-config dl { grid-column: 1 / -1; display: grid; grid-template-columns: 80px 1fr; gap: 1px; margin-top: 2px; }
 .pipeline-task-config dl > div { display: flex; flex-direction: column; gap: 3px; padding: 6px 7px; border: 1px solid var(--border); background: var(--bg-1); }
-.pipeline-task-config dt { color: var(--fg-3); font: 7px/1 var(--font-mono); text-transform: uppercase; }
-.pipeline-task-config dd { overflow: hidden; color: var(--fg-1); font: 8.5px/1.2 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-task-config dt { color: var(--fg-3); font: var(--ui-font-7)/1 var(--font-mono); text-transform: uppercase; }
+.pipeline-task-config dd { overflow: hidden; color: var(--fg-1); font: var(--ui-font-8-5)/1.2 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 
 .pipeline-task-monitor { min-width: 0; min-height: 0; overflow: auto; padding: 14px 18px 18px; }
 .pipeline-task-monitor > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
 .pipeline-task-monitor > header > div { display: flex; flex-direction: column; gap: 5px; }
-.pipeline-task-monitor > header strong { font-size: 11px; }
-.pipeline-run-history-select { max-width: 360px; padding: 5px 28px 5px 8px; color: var(--text-primary); background: var(--bg-2); border: 1px solid var(--border); border-radius: 5px; font: inherit; font-size: 11px; }
+.pipeline-task-monitor > header strong { font-size: var(--ui-font-11); }
+.pipeline-run-history-select { max-width: 360px; padding: 5px 28px 5px 8px; color: var(--text-primary); background: var(--bg-2); border: 1px solid var(--border); border-radius: 5px; font: inherit; font-size: var(--ui-font-11); }
 .pipeline-task-monitor .pipeline-monitor-empty { min-height: 110px; height: auto; border: 1px dashed var(--border); border-radius: 7px; background: color-mix(in oklab, var(--bg-2) 42%, transparent); }
-.pipeline-stage-history-unavailable { margin: 0; padding: 10px; color: var(--fg-3); font-size: 9px; }
-.pipeline-legacy-run-notice { min-height: 70px; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 14px; border: 1px dashed color-mix(in oklab, var(--yellow) 34%, var(--border)); border-radius: 7px; color: var(--fg-2); background: color-mix(in oklab, var(--yellow) 5%, var(--bg-2)); font-size: 9px; text-align: center; }
+.pipeline-stage-history-unavailable { margin: 0; padding: 10px; color: var(--fg-3); font-size: var(--ui-font-9); }
+.pipeline-legacy-run-notice { min-height: 70px; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 14px; border: 1px dashed color-mix(in oklab, var(--yellow) 34%, var(--border)); border-radius: 7px; color: var(--fg-2); background: color-mix(in oklab, var(--yellow) 5%, var(--bg-2)); font-size: var(--ui-font-9); text-align: center; }
 .pipeline-legacy-run-notice > svg { flex: 0 0 auto; color: var(--yellow); }
 .pipeline-legacy-run-notice strong { color: var(--fg-1); }
 
@@ -1421,26 +1581,26 @@
 .pipeline-task-composer > header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
 .pipeline-task-composer-icon { width: 48px; height: 48px; display: grid; flex: none; place-items: center; border: 1px solid color-mix(in oklab, var(--purple) 44%, var(--border)); border-radius: 12px; background: color-mix(in oklab, var(--purple) 15%, var(--bg-3)); color: var(--purple); }
 .pipeline-task-composer > header > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-.pipeline-task-composer h1 { font-size: 21px; letter-spacing: -.025em; }
-.pipeline-task-composer > header p { overflow: hidden; color: var(--fg-2); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-task-composer h1 { font-size: var(--ui-font-21); letter-spacing: -.025em; }
+.pipeline-task-composer > header p { overflow: hidden; color: var(--fg-2); font-size: var(--ui-font-10); text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-task-title-field,
 .pipeline-task-description-field,
 .pipeline-task-template-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 13px; }
 .pipeline-task-title-field > span,
 .pipeline-task-description-field > span,
-.pipeline-task-template-field > span { color: var(--fg-2); font: 700 8px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+.pipeline-task-template-field > span { color: var(--fg-2); font: 700 var(--ui-font-8)/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
 .pipeline-task-title-field input,
-.pipeline-task-description-field textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 8px; outline: none; background: var(--bg-1); color: var(--fg-0); font: 10.5px/1.5 var(--font-ui); user-select: text; }
+.pipeline-task-description-field textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 8px; outline: none; background: var(--bg-1); color: var(--fg-0); font: var(--ui-font-10-5)/1.5 var(--font-ui); user-select: text; }
 .pipeline-task-title-field input { height: 36px; padding: 0 11px; }
 .pipeline-task-description-field textarea { min-height: 150px; padding: 11px; resize: vertical; }
 .pipeline-task-title-field input:focus,
 .pipeline-task-description-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 15%, transparent); }
 .pipeline-task-attachments-field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 13px; }
 .pipeline-task-attachments-field > div { display: flex; flex: 1; align-items: center; gap: 7px; }
-.pipeline-task-attachments-field > div > span { color: var(--fg-2); font: 700 8px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
-.pipeline-task-attachments-field small { color: var(--fg-3); font: 8px/1 var(--font-mono); }
+.pipeline-task-attachments-field > div > span { color: var(--fg-2); font: 700 var(--ui-font-8)/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+.pipeline-task-attachments-field small { color: var(--fg-3); font: var(--ui-font-8)/1 var(--font-mono); }
 .pipeline-task-attachments-field ul { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.pipeline-task-attachments-field li { min-width: 0; max-width: 260px; display: flex; align-items: center; gap: 6px; padding: 5px 5px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-1); color: var(--fg-1); font: 8.5px/1 var(--font-mono); }
+.pipeline-task-attachments-field li { min-width: 0; max-width: 260px; display: flex; align-items: center; gap: 6px; padding: 5px 5px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-1); color: var(--fg-1); font: var(--ui-font-8-5)/1 var(--font-mono); }
 .pipeline-task-attachments-field li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-task-attachments-field li button { border: 0; background: transparent; color: var(--fg-3); cursor: pointer; }
 .pipeline-task-template-preview { display: flex; align-items: center; gap: 10px; margin: 4px 0 16px; padding: 10px; border: 1px solid color-mix(in oklab, var(--purple) 23%, var(--border)); border-radius: 8px; background: color-mix(in oklab, var(--purple) 7%, var(--bg-1)); }
@@ -1448,10 +1608,10 @@
 .pipeline-task-template-preview > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .pipeline-task-template-preview strong,
 .pipeline-task-template-preview small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pipeline-task-template-preview strong { font-size: 10px; }
-.pipeline-task-template-preview small { color: var(--fg-3); font: 8px/1 var(--font-mono); }
+.pipeline-task-template-preview strong { font-size: var(--ui-font-10); }
+.pipeline-task-template-preview small { color: var(--fg-3); font: var(--ui-font-8)/1 var(--font-mono); }
 .pipeline-task-composer > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 15px; border-top: 1px solid var(--border); }
-.pipeline-task-composer > footer > span { color: var(--fg-3); font: 8.5px/1 var(--font-mono); }
+.pipeline-task-composer > footer > span { color: var(--fg-3); font: var(--ui-font-8-5)/1 var(--font-mono); }
 .pipeline-task-composer > footer kbd { display: inline-grid; min-width: 20px; height: 20px; margin-right: 3px; place-items: center; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-3); }
 .pipeline-task-composer > footer > div { display: flex; gap: 8px; }
 
@@ -1482,8 +1642,8 @@
   color: var(--purple);
   box-shadow: 0 18px 50px -28px var(--purple);
 }
-.pipeline-empty-project h1 { font-size: 20px; letter-spacing: -.02em; }
-.pipeline-empty-project p { max-width: 460px; color: var(--fg-2); font-size: 11px; line-height: 1.6; }
+.pipeline-empty-project h1 { font-size: var(--ui-font-20); letter-spacing: -.02em; }
+.pipeline-empty-project p { max-width: 460px; color: var(--fg-2); font-size: var(--ui-font-11); line-height: 1.6; }
 
 @media (max-width: 940px) {
   .pipelines-template-root { grid-template-columns: 150px minmax(0, 1fr) 220px; }

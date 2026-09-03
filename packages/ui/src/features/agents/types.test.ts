@@ -102,7 +102,7 @@ describe("Codex task helpers", () => {
       originalTask: "# Fix the feed\n\nShow the normal task text.",
       node: implement,
       globalInstructions: "Work as one pipeline stage.",
-      upstreamOutputs: [],
+      upstreamHandoffs: [],
     } satisfies PipelinePromptInput);
 
     expect(userMessageText({

@@ -6,6 +6,8 @@ import { ServerRequestCard } from "../agents/ServerRequestCard";
 import { buildTopologicalLayers } from "./graph";
 import { pipelineRunLabel } from "./canvas/runState";
 import { pipelineNodeCanRetry } from "./pipelineRunner";
+import { PipelineHandoffDocument } from "./PipelineHandoffDocument";
+import { isPipelineHandoffDocument } from "./handoff";
 import type {
   PipelineApprovalDecision,
   PipelineDefinition,
@@ -48,6 +50,26 @@ export function pipelineStageNeedsGitSetup(
   state: PipelineNodeRunState | undefined,
 ): boolean {
   return node.type === "integration" && node.provider === "git" && state?.status === "failed";
+}
+
+export function pipelineStageHandoffDocument(
+  node: PipelineDefinition["nodes"][number],
+  state: PipelineNodeRunState | undefined,
+): string | null {
+  if (
+    node.type === "input" ||
+    node.type === "output" ||
+    state?.status !== "completed" ||
+    !state.output?.trim() ||
+    !isPipelineHandoffDocument(state.output)
+  ) return null;
+  return state.output;
+}
+
+export function pipelineRunOutputDescription(output: string): string {
+  return isPipelineHandoffDocument(output)
+    ? "Final joined handoff"
+    : "Legacy pipeline output";
 }
 
 export function openPipelineStageChat(
@@ -115,6 +137,9 @@ export function PipelineTaskRunMonitor(props: PipelineTaskRunMonitorProps) {
         id: edge.id,
         name: `${source?.name ?? "Upstream"} → ${target?.name ?? "Downstream"}`,
         message: edge.approvalMessage,
+        handoff: source
+          ? pipelineStageHandoffDocument(source, run.nodes[source.id])
+          : null,
       };
     }
     const node = run.definition.nodes.find(
@@ -125,6 +150,7 @@ export function PipelineTaskRunMonitor(props: PipelineTaskRunMonitorProps) {
       id: node.id,
       name: node.name,
       message: node.message,
+      handoff: null,
     } : null;
   });
 
@@ -190,11 +216,26 @@ export function PipelineTaskRunMonitor(props: PipelineTaskRunMonitorProps) {
             }>
               {(state) => (
                 <Show when={!state().error} fallback={<pre>{state().error}</pre>}>
-                  <MarkdownText
-                    class="pipeline-stage-output"
-                    text={state().output ?? "This step has not produced output yet."}
-                    onOpenFile={props.onOpenFile}
-                  />
+                  <Show
+                    when={pipelineStageHandoffDocument(stage().node, state())}
+                    fallback={
+                      <MarkdownText
+                        class="pipeline-stage-output"
+                        text={state().output ?? "This step has not produced output yet."}
+                        onOpenFile={props.onOpenFile}
+                      />
+                    }
+                  >
+                    {(handoff) => (
+                      <PipelineHandoffDocument
+                        text={handoff()}
+                        label="Handoff document"
+                        description="Used by connected stages"
+                        open
+                        onOpenFile={props.onOpenFile}
+                      />
+                    )}
+                  </Show>
                 </Show>
               )}
             </Show>
@@ -268,6 +309,16 @@ export function PipelineTaskRunMonitor(props: PipelineTaskRunMonitorProps) {
               <span class="pipeline-eyebrow">APPROVAL REQUIRED</span>
               <strong>{approval().name}</strong>
               <p>{approval().message}</p>
+              <Show when={approval().handoff}>
+                {(handoff) => (
+                  <PipelineHandoffDocument
+                    text={handoff()}
+                    label="Review handoff"
+                    description="Source document awaiting approval"
+                    onOpenFile={props.onOpenFile}
+                  />
+                )}
+              </Show>
             </div>
             <div class="pipeline-approval-request-actions">
               <button
@@ -290,10 +341,13 @@ export function PipelineTaskRunMonitor(props: PipelineTaskRunMonitorProps) {
       </Show>
 
       <Show when={props.run?.output && props.run?.status === "completed"}>
-        <details class="pipeline-result" open>
-          <summary>Pipeline result</summary>
-          <MarkdownText class="pipeline-result-output" text={props.run!.output} onOpenFile={props.onOpenFile} />
-        </details>
+        <PipelineHandoffDocument
+          text={props.run!.output!}
+          label="Pipeline result"
+          description={pipelineRunOutputDescription(props.run!.output!)}
+          open
+          onOpenFile={props.onOpenFile}
+        />
       </Show>
 
       <Show when={!props.run}>

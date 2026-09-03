@@ -110,6 +110,7 @@ import {
   executePipelineRun,
   pipelineNodeCanRetry,
 } from "./pipelineRunner";
+import { createPipelineHandoffDocument } from "./handoff";
 
 function handoff(id: string, source: string, target: string, order = 0): PipelineEdge {
   return { id, source, target, order, mode: "automatic", approvalMessage: "" };
@@ -128,11 +129,11 @@ function promptPayload(prompt: string): {
     }>;
   };
   stage: { nodeId: string; name: string; instructions: string };
-  upstreamOutputs: Array<{
+  upstreamHandoffs: Array<{
     nodeId: string;
     nodeName: string;
     edgeOrder: number;
-    output: string;
+    document: string;
   }>;
 } {
   const start = prompt.indexOf("{");
@@ -330,6 +331,10 @@ describe("pipeline runner", () => {
     const implementPayload = runtime.prompts
       .map(promptPayload)
       .find((entry) => entry.stage.nodeId === "implement");
+    const researchPayload = runtime.prompts
+      .map(promptPayload)
+      .find((entry) => entry.stage.nodeId === "research");
+    expect(researchPayload?.upstreamHandoffs).toEqual([]);
     expect(implementPayload).toEqual(expect.objectContaining({
       originalTask: "Add reusable pipeline handoffs",
       pipeline: expect.objectContaining({
@@ -340,11 +345,11 @@ describe("pipeline runner", () => {
         name: "Implement",
         instructions: "Implement the researched change completely.",
       },
-      upstreamOutputs: [{
+      upstreamHandoffs: [{
         nodeId: "research",
         nodeName: "Research",
         edgeOrder: 0,
-        output: "result from Research",
+        document: createPipelineHandoffDocument("Research", "result from Research"),
       }],
     }));
     expect(implementPayload?.pipeline.steps).toEqual(expect.arrayContaining([
@@ -479,6 +484,104 @@ describe("pipeline runner", () => {
     expect(runtime.attempts.get("reader-a")).toBe(2);
   });
 
+  it("reconstructs a completed approval node's handoff when retrying downstream", async () => {
+    const definition: PipelineDefinition = {
+      schemaVersion: 1,
+      id: "legacy-approval-retry",
+      name: "Legacy approval retry",
+      viewport: { x: 0, y: 0, zoom: 1 },
+      nodes: [
+        { id: "input", type: "input", name: "Task", position: { x: 0, y: 0 } },
+        {
+          id: "builder",
+          type: "agent",
+          name: "Builder",
+          position: { x: 1, y: 0 },
+          instructions: "Build the change.",
+          model: "gpt-test",
+          effort: "medium",
+          permission: "workspace-write",
+          retryCount: 0,
+          color: "purple",
+        },
+        {
+          id: "approval",
+          type: "approval",
+          name: "Review gate",
+          position: { x: 2, y: 0 },
+          message: "Approve the implementation.",
+          color: "yellow",
+        },
+        {
+          id: "consumer",
+          type: "agent",
+          name: "Consumer",
+          position: { x: 3, y: 0 },
+          instructions: "Continue from the approved handoff.",
+          model: "gpt-test",
+          effort: "medium",
+          permission: "read-only",
+          retryCount: 0,
+          color: "cyan",
+        },
+        { id: "output", type: "output", name: "Result", position: { x: 4, y: 0 } },
+      ],
+      edges: [
+        handoff("input-builder", "input", "builder"),
+        handoff("builder-approval", "builder", "approval"),
+        handoff("approval-consumer", "approval", "consumer"),
+        handoff("consumer-output", "consumer", "output"),
+      ],
+    };
+    const previous = createPipelineRun(definition, "/project", "Build safely", "task-1");
+    const builderHandoff = createPipelineHandoffDocument("Builder", "Built safely.");
+    previous.status = "failed";
+    previous.nodes.input = { ...previous.nodes.input, status: "completed", output: previous.input };
+    previous.nodes.builder = { ...previous.nodes.builder, status: "completed", output: builderHandoff };
+    previous.nodes.approval = {
+      ...previous.nodes.approval,
+      status: "completed",
+      output: "Approved: Approve the implementation.",
+    };
+    previous.nodes.consumer = {
+      ...previous.nodes.consumer,
+      status: "failed",
+      error: "provider failed",
+    };
+    previous.nodes.output = { ...previous.nodes.output, status: "skipped" };
+    const retry = createPipelineRetryRun(previous, "consumer");
+    const controller = new AbortController();
+    const requestApproval = vi.fn(async () => "approved" as const);
+
+    await executePipelineRun(retry, {
+      signal: controller.signal,
+      abortPeers: (reason) => controller.abort(reason),
+      fallbackModel: "gpt-test",
+      fallbackEffort: "medium",
+      requestApproval,
+      callbacks: {
+        onRunStatus: () => undefined,
+        onNodePatch: () => undefined,
+        onEdgePatch: () => undefined,
+        onThreadOwned: () => undefined,
+        onTurnOwned: () => undefined,
+        onAttemptSettled: () => undefined,
+        onDelta: () => undefined,
+      },
+    });
+
+    const consumerPayload = runtime.prompts
+      .map(promptPayload)
+      .find((entry) => entry.stage.nodeId === "consumer");
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(consumerPayload?.upstreamHandoffs).toEqual([{
+      nodeId: "approval",
+      nodeName: "Review gate",
+      edgeOrder: 0,
+      document: builderHandoff,
+    }]);
+  });
+
   it("preserves the real branch failure after earlier siblings abort", async () => {
     const run = createPipelineRun(graph(), "/project", "Fail accurately");
     const controller = new AbortController();
@@ -579,6 +682,7 @@ describe("pipeline runner", () => {
       "status",
     ]);
     expect(states.git?.status).toBe("completed");
+    expect(states.git?.output).toContain("# Handoff: Commit & push");
     expect(output).toContain("Pushed feature/tasks");
   });
 
@@ -770,7 +874,7 @@ describe("pipeline runner", () => {
 
     expect(edgeStates["builder-output"]?.status).toBe("approved");
     expect(states.output?.status).toBe("completed");
-    expect(output).toBe("result from Builder");
+    expect(output).toBe(createPipelineHandoffDocument("Builder", "result from Builder"));
     expect(statuses.at(-1)).toBe("completed");
   });
 
