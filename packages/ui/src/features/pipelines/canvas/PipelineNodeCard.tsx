@@ -42,7 +42,7 @@ interface NodeDrag {
   moved: boolean;
 }
 
-const NODE_COLORS = new Set(["cyan", "purple", "green", "blue", "orange"]);
+const NODE_COLORS = new Set(["cyan", "purple", "green", "yellow", "blue", "orange"]);
 
 function nodeColor(node: PipelineNode): string {
   if (node.type === "input") return "cyan";

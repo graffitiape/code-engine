@@ -1,12 +1,22 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { Icon } from "../../design";
 import { PIPELINE_AGENT_PRESETS, type PipelineAgentPresetId } from "./agentPresets";
+import type { SavedPipelineAgent } from "./pipelineAgentLibrary";
 
 interface PipelineAddStepMenuProps {
   disabled: boolean;
   agentDisabled: boolean;
+  savedAgents: readonly SavedPipelineAgent[];
   onAddAgent: (presetId: PipelineAgentPresetId) => void;
+  onAddSavedAgent: (savedAgentId: string) => void;
+  onDeleteSavedAgent: (savedAgentId: string) => boolean;
   onAddGit: () => void;
+}
+
+function permissionLabel(permission: SavedPipelineAgent["permission"]): string {
+  if (permission === "read-only") return "Read only";
+  if (permission === "full-access") return "Full access";
+  return "Workspace access";
 }
 
 export function PipelineAddStepMenu(props: PipelineAddStepMenuProps) {
@@ -24,6 +34,13 @@ export function PipelineAddStepMenu(props: PipelineAddStepMenuProps) {
   const choose = (action: () => void) => {
     setOpen(false);
     action();
+  };
+  const deleteSavedAgent = (savedAgentId: string) => {
+    if (!props.onDeleteSavedAgent(savedAgentId)) return;
+    setOpen(false);
+    queueMicrotask(() => {
+      rootRef?.querySelector<HTMLButtonElement>(".pipeline-add-step-trigger")?.focus();
+    });
   };
 
   return (
@@ -51,7 +68,42 @@ export function PipelineAddStepMenu(props: PipelineAddStepMenuProps) {
 
       <Show when={open()}>
         <div class="pipeline-add-step-popover" role="menu" aria-label="Pipeline step type">
-          <span>Codex presets</span>
+          <Show when={props.savedAgents.length > 0}>
+            <span>Saved agents</span>
+            <For each={props.savedAgents}>
+              {(agent) => (
+                <div class="pipeline-saved-agent-row" role="none">
+                  <button
+                    type="button"
+                    class="pipeline-saved-agent-add"
+                    role="menuitem"
+                    disabled={props.agentDisabled}
+                    onClick={() => choose(() => props.onAddSavedAgent(agent.id))}
+                  >
+                    <span class={`pipeline-add-step-icon ${agent.color}`}><Icon name="command" /></span>
+                    <span>
+                      <strong>{agent.name}</strong>
+                      <small>{agent.model} · {permissionLabel(agent.permission)}</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="pipeline-saved-agent-delete"
+                    role="menuitem"
+                    aria-label={`Delete saved agent ${agent.name}`}
+                    title={`Delete saved agent ${agent.name}`}
+                    onClick={() => deleteSavedAgent(agent.id)}
+                  >
+                    <Icon name="close" />
+                  </button>
+                </div>
+              )}
+            </For>
+            <span class="pipeline-add-step-section">Codex presets</span>
+          </Show>
+          <Show when={props.savedAgents.length === 0}>
+            <span>Codex presets</span>
+          </Show>
           <For each={PIPELINE_AGENT_PRESETS}>
             {(preset) => (
               <button

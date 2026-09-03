@@ -1,8 +1,9 @@
-import { For, Match, Show, Switch, createMemo } from "solid-js";
+import { Match, Show, Switch, createMemo } from "solid-js";
 import type { CodexModel } from "../../bridge/tauri";
 import { Icon, Select, type SelectOption } from "../../design";
-import { PERMISSION_OPTIONS } from "../agents/types";
 import type { PipelineEdgePatch, PipelineNodePatch } from "./pipelineStore";
+import { PipelineAgentInspector } from "./PipelineAgentInspector";
+import type { SavedPipelineAgent } from "./pipelineAgentLibrary";
 import type {
   PipelineAgentNode,
   PipelineApprovalNode,
@@ -15,33 +16,15 @@ interface PipelineInspectorProps {
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   models: readonly CodexModel[];
+  savedAgents: readonly SavedPipelineAgent[];
   disabled: boolean;
   onRenamePipeline: (name: string) => void;
   onUpdateNode: (nodeId: string, patch: PipelineNodePatch) => void;
   onUpdateEdge: (edgeId: string, patch: PipelineEdgePatch) => void;
+  onSaveAgent: (nodeId: string) => void;
   onDeleteNode: (nodeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
 }
-
-const PERMISSION_SELECT: SelectOption[] = PERMISSION_OPTIONS.map((option) => ({
-  value: option.id,
-  label: option.label,
-  description: option.description,
-}));
-
-const RETRY_OPTIONS: SelectOption[] = [0, 1, 2, 3].map((count) => ({
-  value: String(count),
-  label: count === 0 ? "No retries" : `${count} ${count === 1 ? "retry" : "retries"}`,
-  description: count === 0 ? "Fail immediately" : `Try up to ${count + 1} times`,
-}));
-
-const COLOR_OPTIONS: SelectOption[] = [
-  { value: "cyan", label: "Cyan", description: "Discovery and data stages" },
-  { value: "purple", label: "Purple", description: "Build and orchestration stages" },
-  { value: "green", label: "Green", description: "Review and completion stages" },
-  { value: "blue", label: "Blue", description: "Analysis stages" },
-  { value: "orange", label: "Orange", description: "High-impact stages" },
-];
 
 const INTEGRATION_ACTIONS: SelectOption[] = [
   {
@@ -77,19 +60,6 @@ export function PipelineInspector(props: PipelineInspectorProps) {
   const edge = createMemo(() =>
     props.pipeline.edges.find((entry) => entry.id === props.selectedEdgeId) ?? null,
   );
-  const modelOptions = createMemo<SelectOption[]>(() => props.models.map((model) => ({
-    value: model.model,
-    label: model.displayName || model.model,
-    description: model.description,
-  })));
-  const selectedModel = (agent: PipelineAgentNode) =>
-    props.models.find((model) => model.model === agent.model);
-  const effortOptions = (agent: PipelineAgentNode): SelectOption[] =>
-    (selectedModel(agent)?.supportedReasoningEfforts ?? []).map((option) => ({
-      value: option.reasoningEffort,
-      label: option.reasoningEffort,
-      description: option.description,
-    }));
   const nodeName = (id: string) => props.pipeline.nodes.find((entry) => entry.id === id)?.name ?? id;
   const deleteStep = (step: PipelineAgentNode | PipelineIntegrationNode | PipelineApprovalNode) => {
     const connections = props.pipeline.edges.filter(
@@ -116,96 +86,15 @@ export function PipelineInspector(props: PipelineInspectorProps) {
         <Switch>
           <Match when={node()?.type === "agent" ? node() as PipelineAgentNode : null}>
             {(agent) => (
-              <>
-                <label class="pipeline-field">
-                  <span>Agent name</span>
-                  <input
-                    value={agent().name}
-                    disabled={props.disabled}
-                    onChange={(event) => props.onUpdateNode(agent().id, { name: event.currentTarget.value })}
-                  />
-                </label>
-                <label class="pipeline-field">
-                  <span>Instructions</span>
-                  <textarea
-                    rows="7"
-                    value={agent().instructions}
-                    disabled={props.disabled}
-                    onChange={(event) => props.onUpdateNode(agent().id, { instructions: event.currentTarget.value })}
-                  />
-                  <small>Authoritative objective for this stage. Upstream results are passed as untrusted data.</small>
-                </label>
-                <div class="pipeline-field">
-                  <span>Codex model</span>
-                  <Select
-                    value={agent().model}
-                    options={modelOptions()}
-                    onChange={(model) => {
-                      const match = props.models.find((entry) => entry.model === model);
-                      props.onUpdateNode(agent().id, {
-                        model,
-                        effort: match?.defaultReasoningEffort ?? agent().effort,
-                      });
-                    }}
-                    ariaLabel={`Model for ${agent().name}`}
-                    placeholder="Choose a model"
-                    disabled={props.disabled || !props.models.length}
-                  />
-                </div>
-                <div class="pipeline-inspector-grid">
-                  <div class="pipeline-field">
-                    <span>Reasoning</span>
-                    <Select
-                      value={agent().effort}
-                      options={effortOptions(agent())}
-                      onChange={(effort) => props.onUpdateNode(agent().id, { effort })}
-                      ariaLabel={`Reasoning effort for ${agent().name}`}
-                      disabled={props.disabled || !effortOptions(agent()).length}
-                      compact
-                    />
-                  </div>
-                  <div class="pipeline-field">
-                    <span>Retries</span>
-                    <Select
-                      value={String(agent().retryCount)}
-                      options={RETRY_OPTIONS}
-                      onChange={(value) => props.onUpdateNode(agent().id, { retryCount: Number(value) })}
-                      ariaLabel={`Retry count for ${agent().name}`}
-                      disabled={props.disabled}
-                      compact
-                    />
-                  </div>
-                </div>
-                <div class="pipeline-field">
-                  <span>Project access</span>
-                  <Select
-                    value={agent().permission}
-                    options={PERMISSION_SELECT}
-                    onChange={(permission) => props.onUpdateNode(agent().id, { permission: permission as PipelineAgentNode["permission"] })}
-                    ariaLabel={`Project access for ${agent().name}`}
-                    disabled={props.disabled}
-                  />
-                </div>
-                <div class="pipeline-field">
-                  <span>Station color</span>
-                  <Select
-                    value={agent().color}
-                    options={COLOR_OPTIONS}
-                    onChange={(color) => props.onUpdateNode(agent().id, { color })}
-                    ariaLabel={`Station color for ${agent().name}`}
-                    disabled={props.disabled}
-                    compact
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="pipeline-danger-button"
-                  disabled={props.disabled}
-                  onClick={() => deleteStep(agent())}
-                >
-                  Remove agent
-                </button>
-              </>
+              <PipelineAgentInspector
+                agent={agent()}
+                models={props.models}
+                savedAgents={props.savedAgents}
+                disabled={props.disabled}
+                onUpdate={props.onUpdateNode}
+                onSave={props.onSaveAgent}
+                onRemove={() => deleteStep(agent())}
+              />
             )}
           </Match>
 

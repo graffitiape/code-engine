@@ -3,6 +3,14 @@ import type { CodexModel, CodexServerRequest } from "../../bridge/tauri";
 import { validatePipelineConnection } from "./graph";
 import { pipelineAgentPreset, type PipelineAgentPresetId } from "./agentPresets";
 import {
+  PIPELINE_AGENT_LIBRARY_LIMIT,
+  loadPipelineAgentLibrary,
+  savePipelineAgentLibrary,
+  savedAgentFromNode,
+  savedAgentNameKey,
+  type SavedPipelineAgent,
+} from "./pipelineAgentLibrary";
+import {
   createStarterPipeline,
   duplicatePipeline as clonePipeline,
   loadPipelines,
@@ -40,6 +48,7 @@ interface PipelineWorkspaceState {
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   connectionSource: string | null;
+  savedAgents: SavedPipelineAgent[];
   tasks: PipelineTask[];
   selectedTaskId: string | null;
   run: PipelineRun | null;
@@ -57,6 +66,7 @@ const [pipelineState, setPipelineState] = createStore<PipelineWorkspaceState>({
   selectedNodeId: null,
   selectedEdgeId: null,
   connectionSource: null,
+  savedAgents: [],
   tasks: [],
   selectedTaskId: null,
   run: null,
@@ -235,6 +245,7 @@ function replaceSelected(transform: (pipeline: PipelineDefinition) => PipelineDe
 
 export function initializePipelines(cwd: string | null) {
   if (cwd === pipelineState.cwd) return;
+  const savedAgents = loadPipelineAgentLibrary();
   flushViewportPersistence();
   if (runPersistTimer !== undefined) persistRuns();
   if (!cwd) {
@@ -245,6 +256,7 @@ export function initializePipelines(cwd: string | null) {
       selectedNodeId: null,
       selectedEdgeId: null,
       connectionSource: null,
+      savedAgents,
       tasks: [],
       selectedTaskId: null,
       run: null,
@@ -275,6 +287,7 @@ export function initializePipelines(cwd: string | null) {
     selectedNodeId: null,
     selectedEdgeId: null,
     connectionSource: null,
+    savedAgents,
     tasks,
     selectedTaskId: taskState.selectedId,
     run: null,
@@ -335,11 +348,31 @@ export function renameSelectedPipeline(name: string) {
   if (clean) replaceSelected((pipeline) => ({ ...pipeline, name: clean }));
 }
 
-export function addAgentNode(
-  model: string,
-  effort: string,
+interface AgentNodeDefaults {
+  name: string;
+  instructions: string;
+  model: string;
+  effort: string;
+  permission: PipelineAgentNode["permission"];
+  retryCount: number;
+  color: string;
+}
+
+function availableAgentName(pipeline: PipelineDefinition, requestedName: string): string {
+  const names = new Set(
+    pipeline.nodes
+      .filter((node) => node.type === "agent")
+      .map((node) => node.name.toLocaleLowerCase()),
+  );
+  if (!names.has(requestedName.toLocaleLowerCase())) return requestedName;
+  let suffix = 2;
+  while (names.has(`${requestedName} ${suffix}`.toLocaleLowerCase())) suffix += 1;
+  return `${requestedName} ${suffix}`;
+}
+
+function addConfiguredAgentNode(
+  defaults: AgentNodeDefaults,
   canvasSize?: PipelineCanvasSize,
-  presetId: PipelineAgentPresetId = "custom",
 ): string | null {
   const pipeline = selectedPipeline();
   if (!pipeline || !mayEdit()) return null;
@@ -347,24 +380,74 @@ export function addAgentNode(
     setPipelineState("error", `Pipelines support at most ${PIPELINE_MAX_NODES} nodes.`);
     return null;
   }
-  const agents = pipeline.nodes.filter((node) => node.type === "agent");
-  const preset = pipelineAgentPreset(presetId);
-  const matchingNames = agents.filter((agent) => agent.name === preset.name || agent.name.startsWith(`${preset.name} `));
   const node: PipelineAgentNode = {
     id: newPipelineId("node"),
     type: "agent",
-    name: matchingNames.length ? `${preset.name} ${matchingNames.length + 1}` : preset.name,
+    ...defaults,
+    name: availableAgentName(pipeline, defaults.name),
     position: visibleAgentPosition(pipeline, canvasSize),
+  };
+  replaceSelected((definition) => ({ ...definition, nodes: [...definition.nodes, node] }));
+  setPipelineState({ selectedNodeId: node.id, selectedEdgeId: null });
+  return node.id;
+}
+
+export function addAgentNode(
+  model: string,
+  effort: string,
+  canvasSize?: PipelineCanvasSize,
+  presetId: PipelineAgentPresetId = "custom",
+): string | null {
+  const preset = pipelineAgentPreset(presetId);
+  return addConfiguredAgentNode({
+    name: preset.name,
     instructions: preset.instructions,
     model,
     effort,
     permission: preset.permission,
     retryCount: 1,
     color: preset.color,
-  };
-  replaceSelected((definition) => ({ ...definition, nodes: [...definition.nodes, node] }));
-  setPipelineState({ selectedNodeId: node.id, selectedEdgeId: null });
-  return node.id;
+  }, canvasSize);
+}
+
+export function addSavedAgentNode(
+  savedAgentId: string,
+  models: readonly CodexModel[],
+  currentModel: string,
+  canvasSize?: PipelineCanvasSize,
+): string | null {
+  const saved = pipelineState.savedAgents.find((agent) => agent.id === savedAgentId);
+  if (!saved) {
+    setPipelineState("error", "The saved agent could not be found.");
+    return null;
+  }
+  const model = models.find((entry) => entry.model === saved.model) ??
+    models.find((entry) => entry.model === currentModel) ??
+    models.find((entry) => entry.isDefault) ??
+    models[0];
+  if (!model) {
+    setPipelineState("error", "Connect Codex and load its models before adding a saved agent.");
+    return null;
+  }
+  const supportedEfforts = model.supportedReasoningEfforts.map((option) => option.reasoningEffort);
+  const effort = supportedEfforts.includes(saved.effort)
+    ? saved.effort
+    : model.defaultReasoningEffort;
+  if (
+    (model.model !== saved.model || effort !== saved.effort) &&
+    !window.confirm(
+      `“${saved.name}” was saved with ${saved.model} / ${saved.effort}, which is no longer available. Add it with ${model.model} / ${effort} instead?`,
+    )
+  ) return null;
+  return addConfiguredAgentNode({
+    name: saved.name,
+    instructions: saved.instructions,
+    model: model.model,
+    effort,
+    permission: saved.permission,
+    retryCount: saved.retryCount,
+    color: saved.color,
+  }, canvasSize);
 }
 
 export function addIntegrationNode(canvasSize?: PipelineCanvasSize): string | null {
@@ -423,6 +506,73 @@ export function updateNode(nodeId: string, patch: PipelineNodePatch) {
       return { ...node, name: patch.name ?? node.name };
     }),
   }));
+}
+
+export function saveAgentNodeForReuse(nodeId: string): SavedPipelineAgent | null {
+  const node = selectedPipeline()?.nodes.find(
+    (entry): entry is PipelineAgentNode => entry.id === nodeId && entry.type === "agent",
+  );
+  if (!node) {
+    setPipelineState("error", "Select an agent to save it for reuse.");
+    return null;
+  }
+  const draft = savedAgentFromNode(node);
+  if (!draft) {
+    setPipelineState(
+      "error",
+      "A saved agent needs a name, instructions, model, and reasoning level within the supported limits.",
+    );
+    return null;
+  }
+  const latest = loadPipelineAgentLibrary();
+  const existing = latest.find(
+    (agent) => savedAgentNameKey(agent.name) === savedAgentNameKey(draft.name),
+  );
+  if (!existing && latest.length >= PIPELINE_AGENT_LIBRARY_LIMIT) {
+    setPipelineState("error", `You can save up to ${PIPELINE_AGENT_LIBRARY_LIMIT} agents.`);
+    return null;
+  }
+  const saved = existing ? savedAgentFromNode(node, existing.id) : draft;
+  if (!saved) return null;
+  const next = [saved, ...latest.filter((agent) => agent.id !== saved.id)];
+  if (!savePipelineAgentLibrary(next)) {
+    setPipelineState("error", "The agent could not be saved in this webview.");
+    return null;
+  }
+  setPipelineState({
+    savedAgents: next,
+    error: null,
+    announcement: existing ? `${saved.name} updated in saved agents.` : `${saved.name} saved for reuse.`,
+  });
+  return saved;
+}
+
+export function deleteSavedAgent(savedAgentId: string): boolean {
+  const latest = loadPipelineAgentLibrary();
+  const saved = latest.find((agent) => agent.id === savedAgentId);
+  if (!saved) {
+    setPipelineState({
+      savedAgents: latest,
+      announcement: "The saved agent was already removed.",
+    });
+    return true;
+  }
+  if (!window.confirm(`Delete saved agent “${saved.name}”?`)) return false;
+  const next = latest.filter((agent) => agent.id !== savedAgentId);
+  if (!savePipelineAgentLibrary(next)) {
+    setPipelineState("error", "The saved agent could not be deleted from this webview.");
+    return false;
+  }
+  setPipelineState({
+    savedAgents: next,
+    error: null,
+    announcement: `${saved.name} deleted from saved agents.`,
+  });
+  return true;
+}
+
+export function refreshSavedAgentLibrary() {
+  setPipelineState("savedAgents", loadPipelineAgentLibrary());
 }
 
 export function moveNode(nodeId: string, position: PipelinePoint) {

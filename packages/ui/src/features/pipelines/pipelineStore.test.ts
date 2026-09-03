@@ -1,16 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  addAgentNode,
   addPipelineTask,
+  addSavedAgentNode,
   createPipeline,
+  deleteNode,
   deletePipelineTask,
+  deleteSavedAgent,
   initializePipelines,
   patchPipelineRunNode,
   patchPipelineTaskRun,
   selectPipelineRun,
+  saveAgentNodeForReuse,
+  setPipelineError,
   setPipelineRun,
+  updateNode,
   updatePipelineTask,
   usePipelineState,
 } from "./pipelineStore";
+import type { CodexModel } from "../../bridge/tauri";
 import type { PipelineRun } from "./types";
 import { createPipelineRun } from "./pipelineRunner";
 
@@ -184,6 +192,222 @@ describe("pipeline task creation", () => {
       title: "Queued task",
       description: "Run this after the active task",
     });
+  });
+});
+
+function model(
+  name: string,
+  efforts = ["medium", "high"],
+  defaultEffort = efforts[0],
+  isDefault = false,
+): CodexModel {
+  return {
+    id: name,
+    model: name,
+    displayName: name,
+    description: `${name} model`,
+    hidden: false,
+    supportedReasoningEfforts: efforts.map((reasoningEffort) => ({
+      reasoningEffort,
+      description: reasoningEffort,
+    })),
+    defaultReasoningEffort: defaultEffort,
+    isDefault,
+  };
+}
+
+describe("saved pipeline agents", () => {
+  it("saves a full agent snapshot and inserts independent reusable copies", () => {
+    const state = usePipelineState();
+    const sourceId = addAgentNode("gpt-test", "high", { width: 900, height: 640 })!;
+    updateNode(sourceId, {
+      name: "Release writer",
+      instructions: "Write concise release notes from the completed work.",
+      permission: "read-only",
+      retryCount: 2,
+      color: "yellow",
+    });
+
+    const saved = saveAgentNodeForReuse(sourceId)!;
+    expect(saved).toMatchObject({
+      name: "Release writer",
+      instructions: "Write concise release notes from the completed work.",
+      model: "gpt-test",
+      effort: "high",
+      permission: "read-only",
+      retryCount: 2,
+      color: "yellow",
+    });
+
+    updateNode(sourceId, { instructions: "This node can now diverge." });
+    expect(state.savedAgents[0].instructions).toBe(
+      "Write concise release notes from the completed work.",
+    );
+    deleteNode(sourceId);
+
+    const catalog = [model("gpt-test")];
+    const firstId = addSavedAgentNode(saved.id, catalog, "gpt-test", { width: 900, height: 640 })!;
+    const secondId = addSavedAgentNode(saved.id, catalog, "gpt-test", { width: 900, height: 640 })!;
+    const copies = state.pipelines[0].nodes.filter(
+      (node) => node.type === "agent" && (node.id === firstId || node.id === secondId),
+    );
+
+    expect(firstId).not.toBe(secondId);
+    expect(copies.map((node) => node.name)).toEqual(["Release writer", "Release writer 2"]);
+    expect(copies[0]).toMatchObject({
+      instructions: saved.instructions,
+      model: saved.model,
+      effort: saved.effort,
+      permission: saved.permission,
+      retryCount: saved.retryCount,
+      color: saved.color,
+    });
+    expect(copies[0].position).not.toEqual(copies[1].position);
+
+    const persisted = JSON.parse(values.get("ce.pipelines.v1:/project") ?? "null");
+    expect(persisted.pipelines[0].nodes.map((node: { id: string }) => node.id)).toEqual(
+      expect.arrayContaining([firstId, secondId]),
+    );
+  });
+
+  it("updates a same-named saved agent instead of creating duplicates", () => {
+    const state = usePipelineState();
+    const nodeId = addAgentNode("gpt-test", "medium")!;
+    updateNode(nodeId, { name: "  Reviewer  ", instructions: "First version." });
+    const first = saveAgentNodeForReuse(nodeId)!;
+
+    updateNode(nodeId, { name: "reviewer", instructions: "Second version." });
+    const updated = saveAgentNodeForReuse(nodeId)!;
+
+    expect(updated.id).toBe(first.id);
+    expect(state.savedAgents).toHaveLength(1);
+    expect(state.savedAgents[0]).toMatchObject({ name: "reviewer", instructions: "Second version." });
+  });
+
+  it("merges with agents saved by another app instance before writing", () => {
+    const state = usePipelineState();
+    const nodeId = addAgentNode("gpt-test", "medium")!;
+    updateNode(nodeId, { name: "Local agent", instructions: "First local version." });
+    const local = saveAgentNodeForReuse(nodeId)!;
+    const external = {
+      ...local,
+      id: "saved-agent:external",
+      name: "External agent",
+      instructions: "Saved in another instance.",
+    };
+    values.set("ce.pipeline-agent-library.v1", JSON.stringify({
+      schemaVersion: 1,
+      agents: [external, local],
+    }));
+
+    updateNode(nodeId, { instructions: "Updated local version." });
+    expect(saveAgentNodeForReuse(nodeId)).not.toBeNull();
+
+    expect(state.savedAgents.map((agent) => agent.name)).toEqual([
+      "Local agent",
+      "External agent",
+    ]);
+    const persisted = JSON.parse(values.get("ce.pipeline-agent-library.v1") ?? "null");
+    expect(persisted.agents.map((agent: { name: string }) => agent.name)).toEqual([
+      "Local agent",
+      "External agent",
+    ]);
+  });
+
+  it("resolves stale saved model settings against the live catalog", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const state = usePipelineState();
+    const nodeId = addAgentNode("retired-model", "ultra")!;
+    updateNode(nodeId, { name: "Compatibility agent", instructions: "Use supported settings." });
+    const saved = saveAgentNodeForReuse(nodeId)!;
+    deleteNode(nodeId);
+    const catalog = [
+      model("current-model", ["low", "medium"], "medium"),
+      model("default-model", ["high"], "high", true),
+    ];
+
+    const addedId = addSavedAgentNode(saved.id, catalog, "current-model")!;
+    const added = state.pipelines[0].nodes.find((node) => node.id === addedId)!;
+
+    expect(added).toMatchObject({ model: "current-model", effort: "medium" });
+  });
+
+  it("falls back only the effort when the saved model is still available", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const state = usePipelineState();
+    const nodeId = addAgentNode("gpt-test", "ultra")!;
+    updateNode(nodeId, { name: "Effort fallback", instructions: "Keep the model." });
+    const saved = saveAgentNodeForReuse(nodeId)!;
+    deleteNode(nodeId);
+
+    const addedId = addSavedAgentNode(
+      saved.id,
+      [model("gpt-test", ["low", "high"], "high")],
+      "gpt-test",
+    )!;
+    const added = state.pipelines[0].nodes.find((node) => node.id === addedId)!;
+
+    expect(added).toMatchObject({ model: "gpt-test", effort: "high" });
+  });
+
+  it("keeps a saved agent unchanged when replacement model settings are declined", () => {
+    const state = usePipelineState();
+    const nodeId = addAgentNode("retired-model", "ultra")!;
+    updateNode(nodeId, { name: "Retired agent", instructions: "Keep the saved settings." });
+    const saved = saveAgentNodeForReuse(nodeId)!;
+    deleteNode(nodeId);
+
+    expect(addSavedAgentNode(
+      saved.id,
+      [model("current-model", ["medium"], "medium", true)],
+      "current-model",
+    )).toBeNull();
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining(
+      "Add it with current-model / medium instead?",
+    ));
+    expect(state.pipelines[0].nodes.some((node) => node.type === "agent")).toBe(false);
+  });
+
+  it("keeps saved agents across projects and leaves inserted nodes after library deletion", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const state = usePipelineState();
+    const nodeId = addAgentNode("gpt-test", "medium")!;
+    updateNode(nodeId, { name: "Global agent", instructions: "Available everywhere." });
+    const saved = saveAgentNodeForReuse(nodeId)!;
+
+    initializePipelines("/other-project");
+    expect(state.savedAgents.map((agent) => agent.id)).toContain(saved.id);
+    const insertedId = addSavedAgentNode(saved.id, [model("gpt-test")], "gpt-test")!;
+
+    expect(deleteSavedAgent(saved.id)).toBe(true);
+    expect(state.savedAgents).toEqual([]);
+    expect(state.pipelines[0].nodes.some((node) => node.id === insertedId)).toBe(true);
+  });
+
+  it("does not report an agent as saved when persistence fails", () => {
+    const state = usePipelineState();
+    const nodeId = addAgentNode("gpt-test", "medium")!;
+    updateNode(nodeId, { name: "Unsaved agent", instructions: "Do not lose this." });
+    const setItem = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+      if (key === "ce.pipeline-agent-library.v1") throw new Error("quota exceeded");
+      values.set(key, value);
+    });
+
+    expect(saveAgentNodeForReuse(nodeId)).toBeNull();
+    expect(state.savedAgents).toEqual([]);
+    expect(state.error).toBe("The agent could not be saved in this webview.");
+    setItem.mockRestore();
+  });
+
+  it("dismisses a template error without erasing the recorded run error", () => {
+    const run = { ...activeRun("task-1"), status: "failed" as const, error: "Run failed." };
+    setPipelineRun(run);
+    setPipelineError("The agent could not be saved in this webview.");
+
+    setPipelineError(null);
+
+    expect(usePipelineState().error).toBeNull();
+    expect(usePipelineState().run?.error).toBe("Run failed.");
   });
 });
 

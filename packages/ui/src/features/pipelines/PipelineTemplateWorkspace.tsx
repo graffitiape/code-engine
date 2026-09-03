@@ -1,21 +1,27 @@
-import { Show, createMemo } from "solid-js";
+import { Show, createMemo, onCleanup, onMount } from "solid-js";
+import { Icon } from "../../design";
 import { useAgentState } from "../agents/agentStore";
 import { PipelineCanvas } from "./canvas/PipelineCanvas";
 import { PipelineInspector } from "./PipelineInspector";
 import { PipelineRail } from "./PipelineRail";
 import { PipelineAddStepMenu } from "./PipelineAddStepMenu";
 import type { PipelineAgentPresetId } from "./agentPresets";
+import { PIPELINE_AGENT_LIBRARY_STORAGE_KEY } from "./pipelineAgentLibrary";
 import {
   addAgentNode,
   addIntegrationNode,
+  addSavedAgentNode,
   connectNodes,
   createPipeline,
   deleteEdge,
   deleteNode,
+  deleteSavedAgent,
   deleteSelectedPipeline,
   duplicateSelectedPipeline,
   moveNode,
+  refreshSavedAgentLibrary,
   renameSelectedPipeline,
+  saveAgentNodeForReuse,
   selectPipeline,
   selectedPipeline,
   selectPipelineEdge,
@@ -37,6 +43,16 @@ export function PipelineTemplateWorkspace(props: PipelineTemplateWorkspaceProps)
   const state = usePipelineState();
   const pipeline = createMemo(selectedPipeline);
   let canvasRegionRef: HTMLDivElement | undefined;
+  onMount(() => {
+    refreshSavedAgentLibrary();
+    const refreshLibrary = (event: StorageEvent) => {
+      if (event.key === null || event.key === PIPELINE_AGENT_LIBRARY_STORAGE_KEY) {
+        refreshSavedAgentLibrary();
+      }
+    };
+    window.addEventListener("storage", refreshLibrary);
+    onCleanup(() => window.removeEventListener("storage", refreshLibrary));
+  });
   const runStates = () => {
     const run = state.run;
     if (!run || run.pipelineId !== pipeline()?.id) return {};
@@ -69,11 +85,23 @@ export function PipelineTemplateWorkspace(props: PipelineTemplateWorkspaceProps)
     const rect = canvasRegionRef?.getBoundingClientRect();
     focusNode(addIntegrationNode(rect ? { width: rect.width, height: rect.height } : undefined));
   };
+  const addSavedAgent = (savedAgentId: string) => {
+    const rect = canvasRegionRef?.getBoundingClientRect();
+    focusNode(addSavedAgentNode(
+      savedAgentId,
+      agents.models,
+      agents.model,
+      rect ? { width: rect.width, height: rect.height } : undefined,
+    ));
+  };
 
   return (
     <Show when={pipeline()}>
       {(definition) => (
         <div class="pipelines-template-root">
+          <div class="pipeline-sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {state.announcement}
+          </div>
           <PipelineRail
             pipelines={state.pipelines}
             selectedId={state.selectedId}
@@ -98,13 +126,28 @@ export function PipelineTemplateWorkspace(props: PipelineTemplateWorkspaceProps)
                 <PipelineAddStepMenu
                   disabled={props.active}
                   agentDisabled={!agents.model}
+                  savedAgents={state.savedAgents}
                   onAddAgent={addAgent}
+                  onAddSavedAgent={addSavedAgent}
+                  onDeleteSavedAgent={deleteSavedAgent}
                   onAddGit={addIntegration}
                 />
               </div>
             </header>
 
             <div ref={canvasRegionRef} class="pipeline-canvas-region">
+              <Show when={state.error}>
+                <div class="pipeline-template-error" role="alert">
+                  <span>{state.error}</span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss pipeline error"
+                    onClick={() => setPipelineError(null)}
+                  >
+                    <Icon name="close" />
+                  </button>
+                </div>
+              </Show>
               <PipelineCanvas
                 nodes={definition().nodes}
                 edges={definition().edges}
@@ -134,10 +177,12 @@ export function PipelineTemplateWorkspace(props: PipelineTemplateWorkspaceProps)
             selectedNodeId={state.selectedNodeId}
             selectedEdgeId={state.selectedEdgeId}
             models={agents.models}
+            savedAgents={state.savedAgents}
             disabled={props.active}
             onRenamePipeline={renameSelectedPipeline}
             onUpdateNode={updateNode}
             onUpdateEdge={updateEdge}
+            onSaveAgent={saveAgentNodeForReuse}
             onDeleteNode={deleteNode}
             onDeleteEdge={deleteEdge}
           />
