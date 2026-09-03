@@ -6,12 +6,21 @@ import { DEFAULT_PIPELINE_AGENT_INSTRUCTIONS } from "../features/pipelines/pipel
 
 const defaults: AppSettings = {
   theme: "tokyonight",
+  editor_theme: "match-interface",
   density: "compact",
+  app_zoom: 1,
+  ui_font_size: 13,
   font_family: "JetBrains Mono",
   font_size: 14,
   line_height: 1.5,
   word_wrap: false,
   tab_size: 2,
+  lsp_enabled: false,
+  lsp_servers: ["typescript", "rust", "python", "json", "css", "html"].map((id) => ({
+    id,
+    enabled: true,
+    executable: null,
+  })),
   codex_path: null,
   pipeline_agent_instructions: DEFAULT_PIPELINE_AGENT_INSTRUCTIONS,
 };
@@ -22,6 +31,17 @@ const [settingsError, setSettingsError] = createSignal<string | null>(null);
 
 let initializePromise: Promise<AppSettings> | null = null;
 let saveTimer: number | undefined;
+let settingsDirty = false;
+let saveChain: Promise<void> = Promise.resolve();
+
+export function settingsStyleProperties(settings: AppSettings) {
+  return {
+    "--font-mono": `"${settings.font_family}", "SF Mono", monospace`,
+    "--ui-font-size": `${settings.ui_font_size}px`,
+    "--editor-font-size": `${settings.font_size}px`,
+    "--editor-line-height": String(settings.line_height),
+  };
+}
 
 function applyToDocument(settings: AppSettings) {
   if (typeof document === "undefined") return;
@@ -30,9 +50,9 @@ function applyToDocument(settings: AppSettings) {
   root.setAttribute("data-density", settings.density);
   root.removeAttribute("data-vibrancy");
   root.style.removeProperty("--window-opacity");
-  root.style.setProperty("--font-mono", `"${settings.font_family}", "SF Mono", monospace`);
-  root.style.setProperty("--editor-font-size", `${settings.font_size}px`);
-  root.style.setProperty("--editor-line-height", String(settings.line_height));
+  for (const [property, value] of Object.entries(settingsStyleProperties(settings))) {
+    root.style.setProperty(property, value);
+  }
 }
 
 export function initializeSettings(): Promise<AppSettings> {
@@ -62,14 +82,43 @@ export function updateSettings(settings: Partial<AppSettings>, persist = true) {
   applyToDocument(settingsStore);
   if (!persist) return;
 
+  settingsDirty = true;
   if (saveTimer !== undefined) window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
-    void saveSettings({ ...settingsStore })
-      .then(() => setSettingsError(null))
-      .catch((error) => {
-        setSettingsError(error instanceof Error ? error.message : String(error));
-      });
+    saveTimer = undefined;
+    void persistPendingSettings().catch(() => {
+      // The visible settings error is set by persistPendingSettings. A later
+      // update or explicit flush retries the current in-memory settings.
+    });
   }, 180);
+}
+
+function persistPendingSettings(): Promise<void> {
+  if (!settingsDirty) return saveChain;
+  settingsDirty = false;
+  const snapshot = { ...settingsStore };
+  const save = saveChain
+    .catch(() => undefined)
+    .then(() => saveSettings(snapshot))
+    .then(() => {
+      setSettingsError(null);
+    })
+    .catch((error) => {
+      settingsDirty = true;
+      setSettingsError(error instanceof Error ? error.message : String(error));
+      throw error;
+    });
+  saveChain = save;
+  return save;
+}
+
+/** Persist pending settings before a native subsystem reads its own config file. */
+export function flushSettings(): Promise<void> {
+  if (saveTimer !== undefined) {
+    window.clearTimeout(saveTimer);
+    saveTimer = undefined;
+  }
+  return persistPendingSettings();
 }
 
 export function useSettingsStore() {

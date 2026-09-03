@@ -10,6 +10,8 @@ export type { SelectOption, SelectProps } from './forms/Select';
 // Chrome
 export { TitleBar } from './chrome/TitleBar';
 export type { TitleBarProps } from './chrome/TitleBar';
+export { TitleBarActions } from './chrome/TitleBarActions';
+export type { TitleBarAction, TitleBarActionsProps } from './chrome/TitleBarActions';
 export { PageSwitcher } from './chrome/PageSwitcher';
 export type { PageSwitcherProps, PageKey } from './chrome/PageSwitcher';
 export { ProjectSwitcher } from './chrome/ProjectSwitcher';
@@ -33,3 +35,9 @@ export { GitSetupDialog } from './overlays/GitSetupDialog';
 export type { GitSetupDialogProps } from './overlays/GitSetupDialog';
 export { SettingsPanel } from './overlays/SettingsPanel';
 export type { SettingsPanelProps } from './overlays/SettingsPanel';
+export { WorkspaceOverlays } from './overlays/WorkspaceOverlays';
+export type {
+  EditorCommand,
+  WorkspaceOverlay,
+  WorkspaceOverlaysProps,
+} from './overlays/WorkspaceOverlays';

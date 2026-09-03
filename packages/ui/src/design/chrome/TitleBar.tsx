@@ -5,6 +5,7 @@ import type { Tab } from '../types';
 import { Icon, FileIcon } from '../Icon';
 import { PageSwitcher, type PageKey } from './PageSwitcher';
 import { ProjectSwitcher } from './ProjectSwitcher';
+import { TitleBarActions, type TitleBarAction } from './TitleBarActions';
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from '../../lib/titlebar';
 
 export interface TitleBarProps {
@@ -13,12 +14,7 @@ export interface TitleBarProps {
   onTabClick: (id: string) => void;
   onTabClose: (id: string) => void;
   onNewTab: () => void;
-  onCommandPalette: () => void;
-  toggleSidebar: () => void;
-  toggleGit: () => void;
-  toggleMinimap: () => void;
-  toggleSettings: () => void;
-  toggleSearch: () => void;
+  onAction: (action: TitleBarAction) => void;
   sidebarOpen: boolean;
   activeOverlay: string | null;
   activePage: PageKey;
@@ -68,49 +64,11 @@ export function TitleBar(props: TitleBarProps) {
           <Icon name="plus" style={{ width: '12px', height: '12px' }} />
         </div>
       </div>
-      <div class="titlebar-right">
-        <button
-          class={`icon-btn ${props.sidebarOpen ? 'active' : ''}`}
-          onClick={props.toggleSidebar}
-          title="Toggle sidebar (⌘B)"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-            <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
-            <path d="M6 2.5v11" />
-          </svg>
-        </button>
-        <button class="icon-btn" onClick={props.onCommandPalette} title="Command palette (⌘⇧P)">
-          <Icon name="command" />
-        </button>
-        <button
-          class={`icon-btn ${props.activeOverlay === 'search' ? 'active' : ''}`}
-          onClick={props.toggleSearch}
-          title="Search (⌘⇧F)"
-        >
-          <Icon name="search" />
-        </button>
-        <button
-          class={`icon-btn ${props.activeOverlay === 'minimap' ? 'active' : ''}`}
-          onClick={props.toggleMinimap}
-          title="Minimap (⌘⇧M)"
-        >
-          <Icon name="minimap" />
-        </button>
-        <button
-          class={`icon-btn ${props.activeOverlay === 'git' ? 'active' : ''}`}
-          onClick={props.toggleGit}
-          title="Git panel"
-        >
-          <Icon name="git" />
-        </button>
-        <button
-          class={`icon-btn ${props.activeOverlay === 'settings' ? 'active' : ''}`}
-          onClick={props.toggleSettings}
-          title="Settings (⌘,)"
-        >
-          <Icon name="settings" />
-        </button>
-      </div>
+      <TitleBarActions
+        activeOverlay={props.activeOverlay}
+        sidebarOpen={props.sidebarOpen}
+        onAction={props.onAction}
+      />
     </div>
   );
 }

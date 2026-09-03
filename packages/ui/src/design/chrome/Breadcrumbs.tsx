@@ -52,7 +52,7 @@ export function Breadcrumbs(props: BreadcrumbsProps) {
                         color: 'var(--cyan)',
                         'font-weight': '700',
                         'font-family': 'var(--font-mono)',
-                        'font-size': '10px',
+                        'font-size': 'var(--ui-font-10)',
                       }}
                     >
                       ƒ

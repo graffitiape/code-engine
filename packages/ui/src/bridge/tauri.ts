@@ -2,6 +2,10 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppSettings } from "./types";
+import type {
+  LspMessageEvent,
+  LspServerStatusEvent,
+} from "../features/lsp/types";
 
 /** One filesystem entry returned by `read_dir`. */
 export interface FsNode {
@@ -297,6 +301,56 @@ export async function replaceAllWorkspace(
   request: ReplaceRequest,
 ): Promise<ReplaceResult> {
   return invoke("replace_all_workspace", { path, request });
+}
+
+// ---------------------------------------------------------------------------
+// Language server bridge
+// ---------------------------------------------------------------------------
+
+export async function lspStart(
+  path: string,
+  serverId: string,
+): Promise<LspServerStatusEvent> {
+  return invoke("lsp_start", { path, serverId });
+}
+
+export async function lspSend(
+  path: string,
+  serverId: string,
+  generation: number,
+  message: string,
+): Promise<void> {
+  return invoke("lsp_send", { path, serverId, generation, message });
+}
+
+export async function lspStop(
+  path: string,
+  serverId: string,
+  generation: number,
+): Promise<LspServerStatusEvent> {
+  return invoke("lsp_stop", { path, serverId, generation });
+}
+
+export async function lspStatuses(path: string): Promise<LspServerStatusEvent[]> {
+  return invoke("lsp_statuses", { path });
+}
+
+export async function lspStopAll(path: string): Promise<LspServerStatusEvent[]> {
+  return invoke("lsp_stop_all", { path });
+}
+
+export function listenLspMessages(
+  handler: (event: LspMessageEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri()) return Promise.resolve(() => {});
+  return listen<LspMessageEvent>("lsp:message", (event) => handler(event.payload));
+}
+
+export function listenLspStatus(
+  handler: (status: LspServerStatusEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri()) return Promise.resolve(() => {});
+  return listen<LspServerStatusEvent>("lsp:status", (event) => handler(event.payload));
 }
 
 /** Recursively list every non-ignored file under the workspace root. */

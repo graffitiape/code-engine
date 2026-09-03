@@ -2,21 +2,21 @@ import { Component, For, createSignal, createEffect, onMount, onCleanup, Show } 
 import { createStore } from "solid-js/store";
 import {
   TitleBar,
+  TitleBarActions,
   PageSwitcher,
   ProjectSwitcher,
   Sidebar,
   Breadcrumbs,
   StatusBar,
-  CommandPalette,
-  GitPanel,
-  Minimap,
-  SearchReplace,
-  SettingsPanel,
 } from "../design";
 import { save as showSaveDialog } from "@tauri-apps/plugin-dialog";
 import type { FileNode, Tab } from "../design/types";
-import type { PageKey } from "../design";
-import type { FileLinkTarget } from "../design/MarkdownText";
+import type {
+  EditorCommand,
+  PageKey,
+  TitleBarAction,
+  WorkspaceOverlay,
+} from "../design";
 import CodeEditor from "../components/editor/CodeEditor";
 import {
   createDirectory,
@@ -59,8 +59,14 @@ import { AppLogo } from "../design/AppLogo";
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
 import { loadEditorSession, saveEditorSession } from "../stores/editor-session";
 import { useSettingsStore } from "../stores/settings";
-
-type OverlayName = "palette" | "git" | "minimap" | "search" | "settings" | null;
+import {
+  diagnosticCountsForPath,
+  lspLanguageForPath,
+  notifyLspDocumentSaved,
+  sameWorkspacePath,
+  statusForServer,
+  useLspStore,
+} from "../features/lsp";
 
 const messageForError = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -104,7 +110,24 @@ function collectExpandedPaths(nodes: FileNode[], paths = new Set<string>()): Set
 interface EditorPageProps {
   activePage: PageKey;
   onNavigatePage: (page: PageKey) => void;
-  fileNavigation: (FileLinkTarget & { id: number }) | null;
+  fileNavigation: EditorFileNavigation | null;
+  editorCommand: EditorCommandRequest | null;
+  sidebarOpen: boolean;
+  activeOverlay: WorkspaceOverlay;
+  onTitleBarAction: (action: TitleBarAction) => void;
+  onRegisterRefresh: (refresh: (() => Promise<void>) | null) => void;
+}
+
+export interface EditorFileNavigation {
+  id: number;
+  path: string;
+  line?: number;
+  column?: number;
+}
+
+export interface EditorCommandRequest {
+  id: number;
+  command: EditorCommand;
 }
 
 const EditorPage: Component<EditorPageProps> = (props) => {
@@ -113,9 +136,6 @@ const EditorPage: Component<EditorPageProps> = (props) => {
   });
   const [tabs, setTabs] = createSignal<Tab[]>([]);
   const [activeTabId, setActiveTabId] = createSignal<string>("");
-  const [sidebarOpen, setSidebarOpen] = createSignal(true);
-  const [activeOverlay, setActiveOverlay] = createSignal<OverlayName>(null);
-  const [paletteMode, setPaletteMode] = createSignal<"files" | "commands">("files");
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);
   const [trashEntries, setTrashEntries] = createSignal<TrashEntry[]>([]);
@@ -127,6 +147,7 @@ const EditorPage: Component<EditorPageProps> = (props) => {
 
   const workspace = useWorkspace();
   const { settings: appSettings } = useSettingsStore();
+  const lspState = useLspStore();
   const buffersVer = useBuffersVersion();
 
   async function loadRootTree(rootPath: string, announce = true) {
@@ -207,27 +228,7 @@ const EditorPage: Component<EditorPageProps> = (props) => {
       if (props.activePage !== "editor") return;
       const cmd = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      if (cmd && e.shiftKey && key === "p") {
-        e.preventDefault();
-        setPaletteMode("commands");
-        setActiveOverlay("palette");
-      } else if (cmd && key === "p" && !e.shiftKey) {
-        e.preventDefault();
-        setPaletteMode("files");
-        setActiveOverlay("palette");
-      } else if (cmd && e.shiftKey && key === "f") {
-        e.preventDefault();
-        setActiveOverlay("search");
-      } else if (cmd && e.shiftKey && key === "m") {
-        e.preventDefault();
-        setActiveOverlay("minimap");
-      } else if (cmd && e.key === ",") {
-        e.preventDefault();
-        setActiveOverlay("settings");
-      } else if (cmd && key === "b") {
-        e.preventDefault();
-        setSidebarOpen((o) => !o);
-      } else if (cmd && key === "o" && !e.shiftKey) {
+      if (cmd && key === "o" && !e.shiftKey) {
         e.preventDefault();
         void chooseFolder();
       } else if (cmd && key === "t" && !e.shiftKey) {
@@ -240,8 +241,6 @@ const EditorPage: Component<EditorPageProps> = (props) => {
           e.preventDefault();
           closeTab(id);
         }
-      } else if (e.key === "Escape" && activeOverlay()) {
-        setActiveOverlay(null);
       }
     };
     window.addEventListener("keydown", handler);
@@ -597,7 +596,20 @@ const EditorPage: Component<EditorPageProps> = (props) => {
     const target = props.fileNavigation;
     if (!target) return;
     void target.id;
-    void openFileAt(target.path, target.line, target.column);
+    if (typeof target.line === "number" && typeof target.column === "number") {
+      void openFileAt(target.path, target.line, target.column);
+    } else {
+      void openFile(target.path);
+    }
+  });
+
+  let handledEditorCommandId = 0;
+  createEffect(() => {
+    const request = props.editorCommand;
+    if (!request || request.id === handledEditorCommandId) return;
+    handledEditorCommandId = request.id;
+    if (request.command === "chooseFolder") void chooseFolder();
+    else void newTab();
   });
 
   async function refreshProjectFiles() {
@@ -608,6 +620,11 @@ const EditorPage: Component<EditorPageProps> = (props) => {
     const root = workspace.activeRoot();
     if (root) await loadRootTree(root, false);
   }
+
+  onMount(() => {
+    props.onRegisterRefresh(refreshProjectFiles);
+  });
+  onCleanup(() => props.onRegisterRefresh(null));
 
   function closeTab(id: string) {
     if (isDirty(id) && !window.confirm(`Close ${basename(id)} without saving?`)) {
@@ -642,6 +659,12 @@ const EditorPage: Component<EditorPageProps> = (props) => {
     try {
       if (!isUntitled(path)) {
         await saveBuffer(path);
+        const root = workspace.activeRoot();
+        if (root) {
+          void notifyLspDocumentSaved(root, path).catch((lspError) => {
+            console.error("[CE] unable to notify language server about saved document", lspError);
+          });
+        }
         return;
       }
 
@@ -691,12 +714,32 @@ const EditorPage: Component<EditorPageProps> = (props) => {
   });
 
   const openFilePaths = () => new Set(tabs().map((t) => t.id));
-  const diagCounts = { error: 0, warn: 0 };
 
   const currentFile = () => {
     const id = activeTabId();
     if (!id || id.startsWith("untitled-")) return undefined;
     return id;
+  };
+
+  const diagCounts = () => {
+    void lspState.diagnostics;
+    const path = currentFile();
+    return path ? diagnosticCountsForPath(path) : { error: 0, warn: 0 };
+  };
+
+  const currentLspStatus = () => {
+    void lspState.statuses;
+    if (!appSettings.lsp_enabled) return null;
+    const path = currentFile();
+    const root = workspace.activeRoot();
+    const language = path ? lspLanguageForPath(path) : null;
+    const status = language ? statusForServer(language.serverId) : null;
+    return root && status && sameWorkspacePath(root, status.root) ? status : null;
+  };
+
+  const lspTask = () => {
+    const status = currentLspStatus();
+    return status?.state === "starting" ? `Starting ${status.label}…` : null;
   };
 
   const currentConflict = () => {
@@ -726,9 +769,6 @@ const EditorPage: Component<EditorPageProps> = (props) => {
     return buf?.cursor ?? { line: 0, col: 0 };
   };
 
-  const toggleOverlay = (name: Exclude<OverlayName, null>) =>
-    setActiveOverlay((o) => (o === name ? null : name));
-
   const hasWorkspace = () => Boolean(workspace.activeRoot());
 
   return (
@@ -751,6 +791,11 @@ const EditorPage: Component<EditorPageProps> = (props) => {
                 <ProjectSwitcher />
                 <PageSwitcher active={props.activePage} onNavigate={props.onNavigatePage} />
                 <div class="tabs" />
+                <TitleBarActions
+                  activeOverlay={props.activeOverlay}
+                  sidebarOpen={false}
+                  onAction={props.onTitleBarAction}
+                />
               </div>
               <EmptyWorkspace
                 onPick={chooseFolder}
@@ -771,17 +816,9 @@ const EditorPage: Component<EditorPageProps> = (props) => {
             }}
             onTabClose={closeTab}
             onNewTab={newTab}
-            onCommandPalette={() => {
-              setPaletteMode("commands");
-              setActiveOverlay("palette");
-            }}
-            toggleSidebar={() => setSidebarOpen((o) => !o)}
-            toggleGit={() => toggleOverlay("git")}
-            toggleMinimap={() => toggleOverlay("minimap")}
-            toggleSettings={() => toggleOverlay("settings")}
-            toggleSearch={() => toggleOverlay("search")}
-            sidebarOpen={sidebarOpen()}
-            activeOverlay={activeOverlay()}
+            onAction={props.onTitleBarAction}
+            sidebarOpen={props.sidebarOpen}
+            activeOverlay={props.activeOverlay}
             activePage={props.activePage}
             onNavigatePage={props.onNavigatePage}
           />
@@ -791,7 +828,7 @@ const EditorPage: Component<EditorPageProps> = (props) => {
               toggleNode={toggleNode}
               openFile={openFile as any}
               openFilePaths={openFilePaths()}
-              collapsed={!sidebarOpen()}
+              collapsed={!props.sidebarOpen}
               onNewFile={() => void createExplorerFile()}
               onNewFileIn={(node) => void createExplorerFile(node)}
               onNewFolder={(node) => void createExplorerDirectory(node)}
@@ -805,7 +842,10 @@ const EditorPage: Component<EditorPageProps> = (props) => {
               <Show when={breadcrumbsFile()}>
                 <Breadcrumbs
                   file={breadcrumbsFile()}
-                  diagCounts={diagCounts}
+                  diagCounts={diagCounts()}
+                  lspName={currentLspStatus()?.state === "ready"
+                    ? currentLspStatus()?.label
+                    : undefined}
                 />
               </Show>
               <Show when={currentConflict()}>
@@ -860,6 +900,10 @@ const EditorPage: Component<EditorPageProps> = (props) => {
                       lineHeight={appSettings.line_height}
                       wordWrap={appSettings.word_wrap}
                       tabSize={appSettings.tab_size}
+                      editorTheme={appSettings.editor_theme}
+                      workspaceRoot={workspace.activeRoot()}
+                      lspEnabled={appSettings.lsp_enabled}
+                      lspServers={appSettings.lsp_servers}
                     />
                   </div>
                 </Show>
@@ -868,8 +912,8 @@ const EditorPage: Component<EditorPageProps> = (props) => {
                 mode={"EDIT"}
                 file={breadcrumbsFile()}
                 cursor={cursor()}
-                diagCounts={diagCounts}
-                task={busy() ?? null}
+                diagCounts={diagCounts()}
+                task={busy() ?? lspTask()}
                 language={
                   activeTabId() ? iconForName(activeTabId()) : null
                 }
@@ -878,99 +922,6 @@ const EditorPage: Component<EditorPageProps> = (props) => {
           </div>
         </Show>
 
-        <Show when={activeOverlay() === "palette"}>
-          <CommandPalette
-            onClose={() => setActiveOverlay(null)}
-            onOpenFile={openFile as any}
-            workspaceRoot={workspace.activeRoot()}
-            mode={paletteMode()}
-            commands={[
-              {
-                id: "file.new",
-                label: "New File",
-                detail: "Create an untitled editor buffer",
-                shortcut: "⌘T",
-                icon: "plus",
-                run: newTab,
-              },
-              {
-                id: "project.open",
-                label: "Open Folder…",
-                detail: "Switch to another project",
-                shortcut: "⌘O",
-                icon: "folder",
-                run: chooseFolder,
-              },
-              {
-                id: "search.project",
-                label: "Find in Project",
-                detail: "Search and replace across the active project",
-                shortcut: "⌘⇧F",
-                icon: "search",
-                run: () => { setActiveOverlay("search"); },
-              },
-              {
-                id: "git.open",
-                label: "Open Source Control",
-                detail: "Review, stage, and commit changes",
-                icon: "git",
-                run: () => { setActiveOverlay("git"); },
-              },
-              {
-                id: "view.sidebar",
-                label: sidebarOpen() ? "Hide Explorer" : "Show Explorer",
-                shortcut: "⌘B",
-                icon: "file",
-                run: () => { setSidebarOpen((value) => !value); },
-              },
-              {
-                id: "view.agents",
-                label: "Open Agents",
-                detail: "Work with Codex on this project",
-                icon: "bolt",
-                run: () => props.onNavigatePage("agents"),
-              },
-              {
-                id: "view.pipelines",
-                label: "Open Pipelines",
-                detail: "Design and run multi-agent workflows",
-                icon: "branch",
-                run: () => props.onNavigatePage("pipelines"),
-              },
-              {
-                id: "settings.open",
-                label: "Open Settings",
-                shortcut: "⌘,",
-                icon: "settings",
-                run: () => { setActiveOverlay("settings"); },
-              },
-            ]}
-          />
-        </Show>
-        <Show when={activeOverlay() === "minimap"}>
-          <Minimap onClose={() => setActiveOverlay(null)} onOpenFile={openFile as any} />
-        </Show>
-        <Show when={activeOverlay() === "search"}>
-          <SearchReplace
-            workspaceRoot={workspace.activeRoot()}
-            onSelectResult={(location) =>
-              openFileAt(location.path, location.line, location.column)
-            }
-            onReplaced={refreshProjectFiles}
-            onClose={() => setActiveOverlay(null)}
-          />
-        </Show>
-        <Show when={activeOverlay() === "git"}>
-          <GitPanel
-            onClose={() => setActiveOverlay(null)}
-            workspaceRoot={workspace.activeRoot()}
-            onOpenFile={(p: string) => openFile(p)}
-            onRepositoryChanged={refreshProjectFiles}
-          />
-        </Show>
-        <Show when={activeOverlay() === "settings"}>
-          <SettingsPanel onClose={() => setActiveOverlay(null)} />
-        </Show>
         <Show when={error() && hasWorkspace()}>
           <div class="editor-error-toast" role="alert">
             <span>{error()}</span>

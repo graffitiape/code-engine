@@ -1,5 +1,6 @@
 mod codex;
 mod commands;
+mod lsp;
 mod state;
 
 use state::AppState;
@@ -16,6 +17,7 @@ pub fn run() {
 
     let app_state = AppState::new();
     let codex = app_state.codex.clone();
+    let lsp = app_state.lsp.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -44,6 +46,11 @@ pub fn run() {
             commands::codex::codex_turn_interrupt,
             commands::codex::codex_pending_server_requests,
             commands::codex::codex_respond_to_server_request,
+            commands::lsp::lsp_start,
+            commands::lsp::lsp_send,
+            commands::lsp::lsp_stop,
+            commands::lsp::lsp_statuses,
+            commands::lsp::lsp_stop_all,
             commands::settings::get_settings,
             commands::settings::save_settings,
             commands::workspace::set_workspace_root,
@@ -81,7 +88,8 @@ pub fn run() {
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            codex.attach_app(app_handle);
+            codex.attach_app(app_handle.clone());
+            lsp.attach_app(app_handle);
 
             Ok(())
         })

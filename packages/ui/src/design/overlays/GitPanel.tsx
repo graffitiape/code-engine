@@ -422,7 +422,7 @@ export function GitPanel(props: GitPanelProps) {
         </div>
 
         <Show when={error() || notice() || operation()}>
-          <div style={{ padding: "7px 14px", color: error() ? "var(--red)" : operation() ? "var(--fg-2)" : "var(--green)", "border-bottom": "1px solid var(--border)", "font-size": "11px" }}>
+          <div style={{ padding: "7px 14px", color: error() ? "var(--red)" : operation() ? "var(--fg-2)" : "var(--green)", "border-bottom": "1px solid var(--border)", "font-size": "var(--ui-font-11)" }}>
             {error() ?? (operation() ? `${operation()}…` : notice())}
           </div>
         </Show>
@@ -481,7 +481,7 @@ export function GitPanel(props: GitPanelProps) {
           <div style={{ overflow: "auto", padding: "10px 14px", flex: "1" }}>
             <Show when={loading()}><div class="muted">Loading history…</div></Show>
             <For each={logs()}>{(entry) => (
-              <div style={{ display: "grid", "grid-template-columns": "90px 1fr auto", gap: "12px", padding: "9px 4px", "border-bottom": "1px solid var(--border)", "font-size": "12px" }}>
+              <div style={{ display: "grid", "grid-template-columns": "90px 1fr auto", gap: "12px", padding: "9px 4px", "border-bottom": "1px solid var(--border)", "font-size": "var(--ui-font-12)" }}>
                 <code style={{ color: "var(--purple)" }}>{entry.shortId}</code>
                 <div><div style={{ color: "var(--fg-0)" }}>{entry.summary || "(no subject)"}</div><small style={{ color: "var(--fg-3)" }}>{entry.authorName} · {entry.authorEmail}</small></div>
                 <time style={{ color: "var(--fg-3)" }}>{new Date(entry.timestamp * 1000).toLocaleString()}</time>
@@ -495,7 +495,7 @@ export function GitPanel(props: GitPanelProps) {
           <div style={{ overflow: "auto", padding: "10px 14px", flex: "1" }}>
             <Show when={loading()}><div class="muted">Loading branches…</div></Show>
             <For each={branches()}>{(branch) => (
-              <div style={{ display: "flex", "align-items": "center", gap: "12px", padding: "8px 4px", "border-bottom": "1px solid var(--border)", "font-size": "12px" }}>
+              <div style={{ display: "flex", "align-items": "center", gap: "12px", padding: "8px 4px", "border-bottom": "1px solid var(--border)", "font-size": "var(--ui-font-12)" }}>
                 <Icon name="branch" /><code style={{ color: branch.current ? "var(--green)" : "var(--fg-0)" }}>{branch.name}</code>
                 <span style={{ color: "var(--fg-3)" }}>{branch.kind}{branch.upstream ? ` · ${branch.upstream}` : ""}</span>
                 <button class="btn" style={{ "margin-left": "auto" }} disabled={branch.current || branch.kind !== "local" || Boolean(operation())} onClick={() => void mutate("Checkout", (root) => gitCheckoutBranch(root, branch.name), true)}>{branch.current ? "Current" : "Checkout"}</button>

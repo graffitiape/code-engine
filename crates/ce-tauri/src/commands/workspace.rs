@@ -20,7 +20,11 @@ pub async fn set_workspace_root(
 ) -> Result<String, String> {
     let canonical = blocking_io(move || canonical_workspace_root(Path::new(&path))).await?;
     let canonical = path_to_string(&canonical)?;
-    *state.workspace_root.lock().await = Some(canonical.clone());
+    let mut active_root = state.workspace_root.lock().await;
+    if active_root.as_deref() != Some(canonical.as_str()) {
+        state.lsp.stop_all().await?;
+        *active_root = Some(canonical.clone());
+    }
     Ok(canonical)
 }
 

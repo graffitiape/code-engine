@@ -21,15 +21,6 @@ import {
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, closeBrackets, completionKeymap } from "@codemirror/autocomplete";
 import { lintKeymap } from "@codemirror/lint";
-import { oneDark } from "@codemirror/theme-one-dark";
-
-import { javascript } from "@codemirror/lang-javascript";
-import { rust } from "@codemirror/lang-rust";
-import { json } from "@codemirror/lang-json";
-import { markdown } from "@codemirror/lang-markdown";
-import { css } from "@codemirror/lang-css";
-import { html } from "@codemirror/lang-html";
-import { python } from "@codemirror/lang-python";
 
 import {
   ensureBuffer,
@@ -39,6 +30,11 @@ import {
   updateCursor,
   useBuffersVersion,
 } from "../../stores/buffers";
+import { editorThemeExtension } from "./editorThemes";
+import type { LspServerSettings } from "../../bridge/types";
+import { lspExtensionForDocument, setLspActiveRoot } from "../../features/lsp";
+import { flushSettings } from "../../stores/settings";
+import { editorCursorOffset, editorLanguageExtension } from "./editorLanguage";
 
 interface CodeEditorProps {
   path: string | null;
@@ -50,38 +46,10 @@ interface CodeEditorProps {
   lineHeight?: number;
   wordWrap?: boolean;
   tabSize?: number;
-}
-
-function languageExtension(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  switch (ext) {
-    case "ts":
-    case "tsx":
-      return javascript({ jsx: ext === "tsx", typescript: true });
-    case "js":
-    case "mjs":
-    case "cjs":
-      return javascript();
-    case "jsx":
-      return javascript({ jsx: true });
-    case "rs":
-      return rust();
-    case "json":
-      return json();
-    case "md":
-    case "markdown":
-      return markdown();
-    case "css":
-    case "scss":
-      return css();
-    case "html":
-    case "htm":
-      return html();
-    case "py":
-      return python();
-    default:
-      return [];
-  }
+  editorTheme?: string;
+  workspaceRoot?: string | null;
+  lspEnabled?: boolean;
+  lspServers?: readonly LspServerSettings[];
 }
 
 const CodeEditor: Component<CodeEditorProps> = (props) => {
@@ -89,8 +57,11 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
   let view: EditorView | undefined;
   let renderedPath: string | null = null;
   let loadGeneration = 0;
+  let lspConfigurationGeneration = 0;
   const langCompartment = new Compartment();
   const appearanceCompartment = new Compartment();
+  const themeCompartment = new Compartment();
+  const lspCompartment = new Compartment();
   const wrappingCompartment = new Compartment();
   const tabSizeCompartment = new Compartment();
   const buffersVersion = useBuffersVersion();
@@ -101,7 +72,6 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
         "&": {
           height: "100%",
           fontSize: `${props.fontSize ?? 13}px`,
-          background: "var(--bg-1)",
         },
         ".cm-scroller": {
           fontFamily: props.fontFamily
@@ -109,20 +79,7 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
             : 'var(--font-mono), "JetBrains Mono", monospace',
           lineHeight: String(props.lineHeight ?? 1.55),
         },
-        ".cm-gutters": {
-          background: "var(--bg-1)",
-          border: "none",
-          color: "var(--fg-3)",
-        },
-        ".cm-activeLine": {
-          background: "color-mix(in oklab, var(--accent) 8%, transparent)",
-        },
-        ".cm-activeLineGutter": {
-          background: "color-mix(in oklab, var(--accent) 12%, transparent)",
-          color: "var(--fg-1)",
-        },
       },
-      { dark: true },
     );
 
   function buildExtensions(path: string) {
@@ -163,9 +120,10 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
           },
         },
       ]),
-      langCompartment.of(languageExtension(path)),
-      oneDark,
+      langCompartment.of(editorLanguageExtension(path)),
       appearanceCompartment.of(appearanceExtension()),
+      themeCompartment.of(editorThemeExtension(props.editorTheme)),
+      lspCompartment.of([]),
       EditorView.updateListener.of((update) => {
         if (renderedPath !== path) return;
         if (update.docChanged) {
@@ -212,7 +170,7 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
     const state = EditorState.create({
       doc: buffer.content,
       selection: {
-        anchor: cursorOffset(buffer.content, buffer.cursor.line, buffer.cursor.col),
+        anchor: editorCursorOffset(buffer.content, buffer.cursor.line, buffer.cursor.col),
       },
       extensions: buildExtensions(path),
     });
@@ -222,12 +180,58 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
       parent: hostRef,
     });
     view.focus();
+    void configureLspExtension(path, view);
+  }
+
+  async function configureLspExtension(path: string, targetView: EditorView) {
+    const generation = ++lspConfigurationGeneration;
+    const root = props.workspaceRoot;
+    const enabled = props.lspEnabled === true;
+    const servers = (props.lspServers ?? []).map((server) => ({ ...server }));
+
+    try {
+      await setLspActiveRoot(root ?? null);
+      if (enabled) await flushSettings();
+      if (
+        generation !== lspConfigurationGeneration ||
+        view !== targetView ||
+        renderedPath !== path
+      ) {
+        return;
+      }
+      const extension = root && !path.startsWith("untitled-")
+        ? lspExtensionForDocument({ root, path, enabled, servers })
+        : [];
+      targetView.dispatch({
+        effects: lspCompartment.reconfigure(extension),
+      });
+    } catch (error) {
+      if (generation !== lspConfigurationGeneration || view !== targetView) return;
+      const message = error instanceof Error ? error.message : String(error);
+      props.onError?.(`Unable to configure language services: ${message}`);
+      targetView.dispatch({ effects: lspCompartment.reconfigure([]) });
+    }
   }
 
   // Rebuild only when the active path changes. A generation guard prevents a
   // slower previous read from taking over after a fast tab switch.
   createEffect(() => {
     void loadPath(props.path);
+  });
+
+  createEffect(() => {
+    const root = props.workspaceRoot;
+    const enabled = props.lspEnabled;
+    const servers = (props.lspServers ?? []).map((server) => ({
+      id: server.id,
+      enabled: server.enabled,
+      executable: server.executable,
+    }));
+    void root;
+    void enabled;
+    void servers;
+    if (!view || !renderedPath) return;
+    void configureLspExtension(renderedPath, view);
   });
 
   // Clean external writes (including Codex edits) update an already mounted
@@ -251,6 +255,7 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
     const lineHeight = props.lineHeight;
     const wordWrap = props.wordWrap;
     const tabSize = props.tabSize;
+    const editorTheme = props.editorTheme;
     void fontFamily;
     void fontSize;
     void lineHeight;
@@ -258,6 +263,7 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
     view.dispatch({
       effects: [
         appearanceCompartment.reconfigure(appearanceExtension()),
+        themeCompartment.reconfigure(editorThemeExtension(editorTheme)),
         wrappingCompartment.reconfigure(wordWrap ? EditorView.lineWrapping : []),
         tabSizeCompartment.reconfigure(EditorState.tabSize.of(tabSize ?? 2)),
       ],
@@ -265,6 +271,7 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
   });
 
   onCleanup(() => {
+    lspConfigurationGeneration += 1;
     view?.destroy();
     view = undefined;
   });
@@ -277,13 +284,5 @@ const CodeEditor: Component<CodeEditorProps> = (props) => {
     />
   );
 };
-
-function cursorOffset(content: string, lineNumber: number, column: number): number {
-  const lines = content.split("\n");
-  const lineIndex = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
-  let offset = 0;
-  for (let index = 0; index < lineIndex; index++) offset += lines[index].length + 1;
-  return offset + Math.max(0, Math.min(lines[lineIndex].length, column - 1));
-}
 
 export default CodeEditor;

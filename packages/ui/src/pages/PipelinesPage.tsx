@@ -1,6 +1,10 @@
 import { Component, Show, createEffect, createMemo, createSignal } from "solid-js";
-import { Icon, PageSwitcher, ProjectSwitcher } from "../design";
-import type { PageKey } from "../design";
+import { Icon, PageSwitcher, ProjectSwitcher, TitleBarActions } from "../design";
+import type {
+  PageKey,
+  TitleBarAction,
+  WorkspaceOverlay,
+} from "../design";
 import type { FileLinkTarget } from "../design/MarkdownText";
 import { PipelineTaskBoard } from "../features/pipelines/PipelineTaskBoard";
 import { PipelineTemplateWorkspace } from "../features/pipelines/PipelineTemplateWorkspace";
@@ -35,6 +39,8 @@ interface PipelinesPageProps {
   activePage: PageKey;
   onNavigatePage: (page: PageKey) => void;
   onOpenFile: (target: FileLinkTarget) => void;
+  activeOverlay: WorkspaceOverlay;
+  onTitleBarAction: (action: TitleBarAction) => void;
 }
 
 const PipelinesPage: Component<PipelinesPageProps> = (props) => {
@@ -78,6 +84,11 @@ const PipelinesPage: Component<PipelinesPageProps> = (props) => {
           <div class={`pipeline-title-status ${codexReady() ? "connected" : ""}`}>
             <span aria-hidden="true" /> {codexReady() ? "Codex ready" : "Codex setup required"}
           </div>
+          <TitleBarActions
+            activeOverlay={props.activeOverlay}
+            sidebarOpen={false}
+            onAction={props.onTitleBarAction}
+          />
         </div>
 
         <Show

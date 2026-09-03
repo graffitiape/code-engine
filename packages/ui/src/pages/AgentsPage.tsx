@@ -1,6 +1,10 @@
 import { Component, Show } from "solid-js";
-import { PageSwitcher, ProjectSwitcher } from "../design";
-import type { PageKey } from "../design";
+import { PageSwitcher, ProjectSwitcher, TitleBarActions } from "../design";
+import type {
+  PageKey,
+  TitleBarAction,
+  WorkspaceOverlay,
+} from "../design";
 import type { FileLinkTarget } from "../design/MarkdownText";
 import { handleTitlebarMouseDown, handleTitlebarMouseUp } from "../lib/titlebar";
 import { useWorkspace } from "../stores/workspace";
@@ -33,6 +37,8 @@ interface AgentsPageProps {
   activePage: PageKey;
   onNavigatePage: (page: PageKey) => void;
   onOpenFile: (target: FileLinkTarget) => void;
+  activeOverlay: WorkspaceOverlay;
+  onTitleBarAction: (action: TitleBarAction) => void;
 }
 
 const AgentsPage: Component<AgentsPageProps> = (props) => {
@@ -74,6 +80,11 @@ const AgentsPage: Component<AgentsPageProps> = (props) => {
           <Show when={state.server?.state === "ready"}>
             <div class="agent-titlebar-status"><span /> Codex connected</div>
           </Show>
+          <TitleBarActions
+            activeOverlay={props.activeOverlay}
+            sidebarOpen={false}
+            onAction={props.onTitleBarAction}
+          />
         </div>
 
         <Show

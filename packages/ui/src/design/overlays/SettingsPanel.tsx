@@ -1,9 +1,10 @@
 import { For, Match, Show, Switch, createSignal } from "solid-js";
 import { Icon } from "../Icon";
 import { AppLogo } from "../AppLogo";
-import { Select } from "../forms/Select";
 import { updateSettings, useSettingsStore } from "../../stores/settings";
 import { DEFAULT_PIPELINE_AGENT_INSTRUCTIONS } from "../../features/pipelines/pipelineAgentDefaults";
+import { EditorSettingsSection } from "./EditorSettingsSection";
+import { SettingRow } from "./SettingRow";
 
 export interface SettingsPanelProps {
   onClose: () => void;
@@ -25,35 +26,6 @@ function themePreview(theme: string) {
   if (theme === "tokyonight") return "linear-gradient(135deg, #1a1b26, #7aa2f7)";
   if (theme === "catppuccin") return "linear-gradient(135deg, #1e1e2e, #cba6f7)";
   return "linear-gradient(135deg, #1f1d2e, #c4a7e7)";
-}
-
-function Toggle(props: { on: boolean; onToggle: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      class={`switch ${props.on ? "on" : ""}`}
-      role="switch"
-      aria-checked={props.on}
-      aria-label={props.label}
-      onClick={props.onToggle}
-    />
-  );
-}
-
-function SettingRow(props: {
-  label: string;
-  description?: string;
-  children: unknown;
-}) {
-  return (
-    <div class="set-row">
-      <div class="text-left">
-        <div class="label">{props.label}</div>
-        <Show when={props.description}><div class="desc">{props.description}</div></Show>
-      </div>
-      <div class="control">{props.children as any}</div>
-    </div>
-  );
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
@@ -128,62 +100,26 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     </For>
                   </div>
                 </SettingRow>
-              </div>
-            </Match>
-
-            <Match when={section() === "editor"}>
-              <div class="set-group">
-                <h3>Text editor</h3>
-                <SettingRow label="Font family" description="A locally installed monospaced font works best.">
-                  <input
-                    class="settings-input"
-                    value={settings.font_family}
-                    onChange={(event) => updateSettings({ font_family: event.currentTarget.value.trim() || "monospace" })}
-                  />
-                </SettingRow>
-                <SettingRow label="Font size" description={`${settings.font_size}px`}>
+                <SettingRow
+                  label="Interface text size"
+                  description={`${settings.ui_font_size}px base · navigation, agents, pipelines, and dialogs.`}
+                >
                   <input
                     class="settings-range"
                     type="range"
                     min="10"
-                    max="24"
+                    max="18"
                     step="1"
-                    value={settings.font_size}
-                    onInput={(event) => updateSettings({ font_size: Number(event.currentTarget.value) })}
-                  />
-                </SettingRow>
-                <SettingRow label="Line height" description={settings.line_height.toFixed(2)}>
-                  <input
-                    class="settings-range"
-                    type="range"
-                    min="1.1"
-                    max="2"
-                    step="0.05"
-                    value={settings.line_height}
-                    onInput={(event) => updateSettings({ line_height: Number(event.currentTarget.value) })}
-                  />
-                </SettingRow>
-                <SettingRow label="Tab size">
-                  <Select
-                    class="settings-select"
-                    value={String(settings.tab_size)}
-                    options={[
-                      { value: "2", label: "2 spaces" },
-                      { value: "4", label: "4 spaces" },
-                      { value: "8", label: "8 spaces" },
-                    ]}
-                    onChange={(value) => updateSettings({ tab_size: Number(value) })}
-                    ariaLabel="Editor tab size"
-                  />
-                </SettingRow>
-                <SettingRow label="Word wrap" description="Wrap long lines at the editor viewport.">
-                  <Toggle
-                    label="Word wrap"
-                    on={settings.word_wrap}
-                    onToggle={() => updateSettings({ word_wrap: !settings.word_wrap })}
+                    value={settings.ui_font_size}
+                    aria-label="Interface text size"
+                    onInput={(event) => updateSettings({ ui_font_size: Number(event.currentTarget.value) })}
                   />
                 </SettingRow>
               </div>
+            </Match>
+
+            <Match when={section() === "editor"}>
+              <EditorSettingsSection settings={settings} />
             </Match>
 
             <Match when={section() === "agents"}>

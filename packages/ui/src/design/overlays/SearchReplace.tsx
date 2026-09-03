@@ -418,7 +418,7 @@ export function SearchReplace(props: SearchReplaceProps) {
               gap: "6px",
               "align-items": "center",
               "justify-content": "space-between",
-              "font-size": "11px",
+              "font-size": "var(--ui-font-11)",
               color: error() ? "var(--red)" : "var(--fg-3)",
               "font-family": "var(--font-mono)",
             }}
@@ -467,8 +467,8 @@ function SearchHeader(props: {
           }}
         />
       </button>
-      <strong style={{ "font-size": "12px", color: "var(--fg-0)" }}>Search</strong>
-      <span style={{ "margin-left": "auto", color: "var(--fg-3)", "font-size": "11px", "font-family": "var(--font-mono)" }}>
+      <strong style={{ "font-size": "var(--ui-font-12)", color: "var(--fg-0)" }}>Search</strong>
+      <span style={{ "margin-left": "auto", color: "var(--fg-3)", "font-size": "var(--ui-font-11)", "font-family": "var(--font-mono)" }}>
         {props.loading
           ? "Searching…"
           : `${props.count.toLocaleString()}${props.truncated ? "+" : ""} matches · ${props.fileCount.toLocaleString()} files`}
@@ -520,7 +520,7 @@ function ReplaceConfirmation(props: {
         "border-radius": "6px",
         background: "color-mix(in oklab, var(--orange) 8%, var(--bg-1))",
         color: "var(--fg-1)",
-        "font-size": "11px",
+        "font-size": "var(--ui-font-11)",
       }}
     >
       <div style={{ "margin-bottom": "8px", "line-height": "1.45" }}>

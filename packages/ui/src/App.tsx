@@ -8,7 +8,17 @@ import {
   Show,
 } from "solid-js";
 import EditorPage from "./pages/EditorPage";
-import type { PageKey } from "./design";
+import type {
+  EditorCommandRequest,
+  EditorFileNavigation,
+} from "./pages/EditorPage";
+import { WorkspaceOverlays } from "./design";
+import type {
+  EditorCommand,
+  PageKey,
+  TitleBarAction,
+  WorkspaceOverlay,
+} from "./design";
 import type { FileLinkTarget } from "./design/MarkdownText";
 import { initializeWorkspace, useWorkspace } from "./stores/workspace";
 import { initializeSettings } from "./stores/settings";
@@ -41,32 +51,103 @@ const App: Component = () => {
   const [page, setPage] = createSignal<PageKey>(pageFromPath(window.location.pathname));
   const [agentsMounted, setAgentsMounted] = createSignal(page() === "agents");
   const [pipelinesMounted, setPipelinesMounted] = createSignal(page() === "pipelines");
-  const [fileNavigation, setFileNavigation] = createSignal<(FileLinkTarget & { id: number }) | null>(null);
+  const [activeOverlay, setActiveOverlay] = createSignal<WorkspaceOverlay>(null);
+  const [paletteMode, setPaletteMode] = createSignal<"files" | "commands">("files");
+  const [sidebarOpen, setSidebarOpen] = createSignal(true);
+  const [fileNavigation, setFileNavigation] = createSignal<EditorFileNavigation | null>(null);
+  const [editorCommand, setEditorCommand] = createSignal<EditorCommandRequest | null>(null);
   let fileNavigationId = 0;
+  let editorCommandId = 0;
+  let refreshEditor: (() => Promise<void>) | null = null;
 
   const markPageMounted = (next: PageKey) => {
     if (next === "agents") setAgentsMounted(true);
     if (next === "pipelines") setPipelinesMounted(true);
   };
 
-  const navigate = (next: PageKey) => {
+  const activatePage = (next: PageKey, closeOverlay: boolean) => {
     const path = pathForPage(next);
     if (window.location.pathname !== path) {
       window.history.pushState({}, "", path);
     }
+    if (closeOverlay) setActiveOverlay(null);
     markPageMounted(next);
     setPage(next);
   };
 
+  const navigate = (next: PageKey) => activatePage(next, true);
+
   const openFile = (target: FileLinkTarget) => {
     setFileNavigation({ ...target, id: ++fileNavigationId });
+    // Search, Git, and the buffer overview stay open while revealing the file.
+    activatePage("editor", false);
+  };
+
+  const openFilePath = (path: string) => {
+    setFileNavigation({ path, id: ++fileNavigationId });
+    activatePage("editor", false);
+  };
+
+  const requestEditorCommand = (command: EditorCommand) => {
+    setEditorCommand({ command, id: ++editorCommandId });
     navigate("editor");
+  };
+
+  const toggleSidebar = () => {
+    setActiveOverlay(null);
+    if (page() === "editor") {
+      setSidebarOpen((open) => !open);
+      return;
+    }
+    setSidebarOpen(true);
+    navigate("editor");
+  };
+
+  const openOverlay = (overlay: Exclude<WorkspaceOverlay, null>) => {
+    setActiveOverlay(overlay);
+  };
+
+  const handleTitleBarAction = (action: TitleBarAction) => {
+    if (action === "sidebar") {
+      toggleSidebar();
+      return;
+    }
+    if (action === "palette") setPaletteMode("commands");
+    setActiveOverlay((active) => active === action ? null : action);
   };
 
   onMount(() => {
     void initializeWorkspace();
     void initializeSettings();
     let disposed = false;
+    const onWorkspaceShortcut = (event: KeyboardEvent) => {
+      const command = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (command && event.shiftKey && key === "p") {
+        event.preventDefault();
+        setPaletteMode("commands");
+        setActiveOverlay("palette");
+      } else if (command && key === "p" && !event.shiftKey) {
+        event.preventDefault();
+        setPaletteMode("files");
+        setActiveOverlay("palette");
+      } else if (command && event.shiftKey && key === "f") {
+        event.preventDefault();
+        setActiveOverlay("search");
+      } else if (command && event.shiftKey && key === "m") {
+        event.preventDefault();
+        setActiveOverlay("minimap");
+      } else if (command && event.key === ",") {
+        event.preventDefault();
+        setActiveOverlay("settings");
+      } else if (command && key === "b") {
+        event.preventDefault();
+        toggleSidebar();
+      } else if (event.key === "Escape" && activeOverlay()) {
+        setActiveOverlay(null);
+      }
+    };
+    window.addEventListener("keydown", onWorkspaceShortcut);
     let disconnectAgents: (() => void) | undefined;
     void connectAgentListeners()
       .then((disconnect) => {
@@ -124,6 +205,7 @@ const App: Component = () => {
     }
     const onPop = () => {
       const next = pageFromPath(window.location.pathname);
+      setActiveOverlay(null);
       markPageMounted(next);
       setPage(next);
     };
@@ -131,6 +213,7 @@ const App: Component = () => {
     onCleanup(() => {
       disposed = true;
       disconnectAgents?.();
+      window.removeEventListener("keydown", onWorkspaceShortcut);
       window.removeEventListener("popstate", onPop);
       removeCloseListener?.();
     });
@@ -148,7 +231,18 @@ const App: Component = () => {
         aria-label="Editor workspace"
         style={{ display: page() === "editor" ? "contents" : "none" }}
       >
-        <EditorPage activePage={page()} onNavigatePage={navigate} fileNavigation={fileNavigation()} />
+        <EditorPage
+          activePage={page()}
+          onNavigatePage={navigate}
+          fileNavigation={fileNavigation()}
+          editorCommand={editorCommand()}
+          sidebarOpen={sidebarOpen()}
+          activeOverlay={activeOverlay()}
+          onTitleBarAction={handleTitleBarAction}
+          onRegisterRefresh={(refresh) => {
+            refreshEditor = refresh;
+          }}
+        />
       </div>
       <Show when={agentsMounted()}>
         <div
@@ -157,7 +251,13 @@ const App: Component = () => {
           aria-label="Agents workspace"
           style={{ display: page() === "agents" ? "contents" : "none" }}
         >
-          <AgentsPage activePage={page()} onNavigatePage={navigate} onOpenFile={openFile} />
+          <AgentsPage
+            activePage={page()}
+            onNavigatePage={navigate}
+            onOpenFile={openFile}
+            activeOverlay={activeOverlay()}
+            onTitleBarAction={handleTitleBarAction}
+          />
         </div>
       </Show>
       <Show when={pipelinesMounted()}>
@@ -167,9 +267,30 @@ const App: Component = () => {
           aria-label="Pipelines workspace"
           style={{ display: page() === "pipelines" ? "contents" : "none" }}
         >
-          <PipelinesPage activePage={page()} onNavigatePage={navigate} onOpenFile={openFile} />
+          <PipelinesPage
+            activePage={page()}
+            onNavigatePage={navigate}
+            onOpenFile={openFile}
+            activeOverlay={activeOverlay()}
+            onTitleBarAction={handleTitleBarAction}
+          />
         </div>
       </Show>
+      <WorkspaceOverlays
+        active={activeOverlay()}
+        activePage={page()}
+        paletteMode={paletteMode()}
+        projectRoot={workspace.activeRoot()}
+        sidebarOpen={sidebarOpen()}
+        onClose={() => setActiveOverlay(null)}
+        onEditorCommand={requestEditorCommand}
+        onOpenFile={openFilePath}
+        onOpenFileAt={openFile}
+        onOpenOverlay={openOverlay}
+        onNavigatePage={navigate}
+        onRefreshEditor={() => refreshEditor?.() ?? Promise.resolve()}
+        onToggleSidebar={toggleSidebar}
+      />
     </>
   );
 };
